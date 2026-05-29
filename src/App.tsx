@@ -1,0 +1,113 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { CityProvider } from "@/contexts/CityContext";
+import Login from "./pages/Login";
+import Cadastro from "./pages/Cadastro";
+import SelecionarCidade from "./pages/SelecionarCidade";
+import Dashboard from "./pages/Dashboard";
+import KmRotas from "./pages/KmRotas";
+import ExcessoMiscelaneas from "./pages/ExcessoMiscelaneas";
+import Admin from "./pages/Admin";
+import NotFound from "./pages/NotFound";
+import React from "react";
+import { Loader2, LogOut, ShieldAlert } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import ResetPasswordPage from './pages/ResetPasswordPage';
+
+const queryClient = new QueryClient();
+
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, profile, loading, profileLoading, signOut } = useAuth();
+
+  if (loading || profileLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  // Bloqueia acesso se não tem perfil ou não está aprovado
+    if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Bloqueia acesso se não está aprovado
+  if (profile.status_aprovacao !== 'aprovado') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardContent className="pt-8 pb-8 text-center space-y-4">
+            <ShieldAlert className="h-16 w-16 text-warning mx-auto" />
+            <h2 className="text-xl font-semibold text-foreground">Acesso Pendente</h2>
+            <p className="text-muted-foreground">
+              {!profile || profile.status_aprovacao === 'pendente'
+                ? 'Seu cadastro está aguardando aprovação de um administrador.'
+                : 'Seu cadastro foi rejeitado. Entre em contato com o administrador.'}
+            </p>
+            <Button variant="outline" onClick={signOut} className="mt-4">
+              <LogOut className="h-4 w-4 mr-2" /> Sair
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
+const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (user) return <Navigate to="/selecionar-cidade" replace />;
+  return <>{children}</>;
+};
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <HashRouter>
+        <AuthProvider>
+          <CityProvider>
+            <Routes>
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/cadastro" element={<PublicRoute><Cadastro /></PublicRoute>} />
+              <Route path="/selecionar-cidade" element={<ProtectedRoute><SelecionarCidade /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/km-rotas" element={<ProtectedRoute><KmRotas /></ProtectedRoute>} />
+              <Route path="/excesso-miscelaneas" element={<ProtectedRoute><ExcessoMiscelaneas /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </CityProvider>
+        </AuthProvider>
+      </HashRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
+export default App;
