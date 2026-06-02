@@ -29,7 +29,7 @@ jobs:
         run: cat dist/index.html
 
       - name: Criar comprovante do deploy
-        run: echo "DEPLOY CORRETO $(date)" > dist/COMPROVANTE-DEPLOY.txt
+        run: echo "DEPLOY INDICADORES $(date)" > dist/COMPROVANTE-DEPLOY.txt
 
       - name: Enviar dist para Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
@@ -37,7 +37,6 @@ jobs:
           server: ${{ secrets.HOSTINGER_FTP_SERVER }}
           username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
           password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
-          protocol: ftp
           port: 21
           local-dir: ./dist/
           server-dir: ./indicadores-tec/
