@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Line, Legend, LabelList } from 'recharts';
 import { TrendingUp, Users, Route, ClipboardCheck } from 'lucide-react';
 import KPICard from '@/components/KPICard';
 import type { KmTecnica } from '@/types/database';
@@ -8,9 +8,10 @@ import type { KmTecnica } from '@/types/database';
 interface KmChartsTabProps {
   data: KmTecnica[];
   transporteMap: Map<string, string>;
+  hasActiveFilters?: boolean;
 }
 
-const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap }) => {
+const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap, hasActiveFilters = false }) => {
   const totalKm = useMemo(() => data.reduce((s, d) => s + (d.distancia_km || 0), 0), [data]);
   const totalOS = data.length;
   const mediaKmOS = totalOS > 0 ? totalKm / totalOS : 0;
@@ -124,13 +125,24 @@ const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap }) => {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={evolucaoKm} margin={{ left: 5, right: 10, top: 5, bottom: 50 }}>
+              <ComposedChart data={evolucaoKm} margin={{ left: 5, right: 10, top: 20, bottom: 50 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <XAxis dataKey="data" angle={0} textAnchor="end" tick={{ fontSize: 10 }} height={60} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: number) => [`${v} km`, 'KM']} />
-                <Line type="monotone" dataKey="km" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
+                <Tooltip formatter={(v: number) => [`${v} km`, 'KM']} />
+                <Bar dataKey="km" name="KM" fill="hsl(var(--primary) / 0.25)" radius={[4, 4, 0, 0]}>
+                  {hasActiveFilters && (
+                    <LabelList
+                      dataKey="km"
+                      position="top"
+                      formatter={(v: number) => `${v}`}
+                      style={{ fontSize: 10, fill: 'hsl(var(--foreground))' }}
+                    />
+                  )}
+                </Bar>
+                <Line type="monotone" dataKey="km" name="KM" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
+              </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>

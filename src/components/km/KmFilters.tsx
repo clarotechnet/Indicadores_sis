@@ -9,11 +9,13 @@ export interface KmFilterState {
   dataFinal: string;
   tecnicos: string[];
   frentes: string[];
+  supervisores: string[];
 }
 
 interface KmFiltersProps {
   tecnicos: string[];
   frentes: string[];
+  supervisores: string[];
   filters: KmFilterState;
   onFilterChange: (f: KmFilterState) => void;
   onClearFilters: () => void;
@@ -22,9 +24,9 @@ interface KmFiltersProps {
 }
 
 const KmFilters: React.FC<KmFiltersProps> = ({
-  tecnicos, frentes, filters, onFilterChange, onClearFilters, onImport, onManualAdd,
+  tecnicos, frentes, supervisores, filters, onFilterChange, onClearFilters, onImport, onManualAdd,
 }) => {
-  const hasFilters = filters.dataInicial || filters.dataFinal || filters.tecnicos.length > 0 || filters.frentes.length > 0;
+  const hasFilters = filters.dataInicial || filters.dataFinal || filters.tecnicos.length > 0 || filters.frentes.length > 0 || filters.supervisores.length > 0;
 
   return (
     <div className="bg-card border border-border rounded-xl p-3 sm:p-4 space-y-3">
@@ -41,44 +43,53 @@ const KmFilters: React.FC<KmFiltersProps> = ({
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
         <div className='flex flex-col gap-2'>
-        <label className='text-sm font-medium text-gray-700'>Data inicial</label>
-        <Input
-          type="date"
-          value={filters.dataInicial}
-          onChange={e => onFilterChange({ ...filters, dataInicial: e.target.value })}
-          placeholder="Data inicial"
-          className="text-sm"
-        />
+          <label className='text-sm font-medium text-gray-700'>Data inicial</label>
+          <Input
+            type="date"
+            value={filters.dataInicial}
+            onChange={e => onFilterChange({ ...filters, dataInicial: e.target.value })}
+            placeholder="Data inicial"
+            className="text-sm"
+          />
         </div>
         <div className='flex flex-col gap-2'>
-            <label className='text-sm font-medium text-gray-700'>Data Final</label>
-        <Input
-          type="date"
-          value={filters.dataFinal}
-          onChange={e => onFilterChange({ ...filters, dataFinal: e.target.value })}
-          placeholder="Data final"
-          className="text-sm"
-        />
+          <label className='text-sm font-medium text-gray-700'>Data Final</label>
+          <Input
+            type="date"
+            value={filters.dataFinal}
+            onChange={e => onFilterChange({ ...filters, dataFinal: e.target.value })}
+            placeholder="Data final"
+            className="text-sm"
+          />
         </div>
         <div className='flex flex-col gap-2'>
-        <label className='text-sm font-medium text-gray-700'>Técnico</label>
-        <MultiSelectCombobox
-          options={tecnicos}
-          selected={filters.tecnicos}
-          onChange={v => onFilterChange({ ...filters, tecnicos: v })}
-          placeholder="Técnicos"
-        />
+          <label className='text-sm font-medium text-gray-700'>Técnico</label>
+          <MultiSelectCombobox
+            options={tecnicos}
+            selected={filters.tecnicos}
+            onChange={v => onFilterChange({ ...filters, tecnicos: v })}
+            placeholder="Técnicos"
+          />
         </div>
         <div className='flex flex-col gap-2'>
-        <label className='text-sm font-medium text-gray-700'>Frente</label>
-        <MultiSelectCombobox
-          options={frentes}
-          selected={filters.frentes}
-          onChange={v => onFilterChange({ ...filters, frentes: v })}
-          placeholder="Frente"
-        />
+          <label className='text-sm font-medium text-gray-700'>Supervisores</label>
+          <MultiSelectCombobox
+            options={supervisores}
+            selected={filters.supervisores}
+            onChange={v => onFilterChange({ ...filters, supervisores: v })}
+            placeholder="Supervisores"
+          />
+        </div>
+        <div className='flex flex-col gap-2'>
+          <label className='text-sm font-medium text-gray-700'>Frente</label>
+          <MultiSelectCombobox
+            options={frentes}
+            selected={filters.frentes}
+            onChange={v => onFilterChange({ ...filters, frentes: v })}
+            placeholder="Frente"
+          />
         </div>
       </div>
     </div>

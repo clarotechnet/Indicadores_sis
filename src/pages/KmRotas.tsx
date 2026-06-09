@@ -13,7 +13,7 @@ import KmDataTab from '@/components/km/KmDataTab';
 import KPICard from '@/components/KPICard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Route, Fuel, ClipboardCheck, ShieldAlert } from 'lucide-react';
-import type { KmTecnica, TransporteTecnico } from '@/types/database';
+import type { KmTecnica, TransporteTecnico, DadoTecnico } from '@/types/database';
 
 const KmRotas = () => {
   const { selectedCity } = useCity();
@@ -23,6 +23,7 @@ const KmRotas = () => {
   const [data, setData] = useState<KmTecnica[]>([]);
   const [transportes, setTransportes] = useState<TransporteTecnico[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [dadosTecnicos, setDadosTecnicos] = useState<DadoTecnico[]>([]);
   const [manualOpen, setManualOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('graficos');
   const [filters, setFilters] = useState<KmFilterState>({
@@ -30,6 +31,7 @@ const KmRotas = () => {
     dataFinal: '',
     tecnicos: [],
     frentes: [],
+    supervisores: [],
   });
 
   useEffect(() => {
@@ -39,11 +41,12 @@ const KmRotas = () => {
     }
     fetchData();
     fetchTransportes();
+    fetchDadosTecnicos();
   }, [selectedCity]);
 
   const fetchData = async () => {
     if (!selectedCity) return;
-     let allRows: KmTecnica[] = [];
+    let allRows: KmTecnica[] = [];
     let from = 0;
     const pageSize = 1000;
     let keepFetching = true;
@@ -64,11 +67,20 @@ const KmRotas = () => {
     setData(allRows);
   };
 
-   const fetchTransportes = async () => {
+  const fetchTransportes = async () => {
     const { data: rows } = await supabase
       .from('transporte_tecnico')
       .select('*');
     setTransportes((rows as TransporteTecnico[]) || []);
+  };
+
+  const fetchDadosTecnicos = async () => {
+    if (!selectedCity) return;
+    const { data: rows } = await supabase
+      .from('dados_tecnicos')
+      .select('*')
+      .eq('cidade', selectedCity);
+    setDadosTecnicos((rows as DadoTecnico[]) || []);
   };
 
   const transporteMap = useMemo(() => {
@@ -77,17 +89,35 @@ const KmRotas = () => {
     return map;
   }, [transportes]);
 
+  const supervisorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    dadosTecnicos.forEach(d => {
+      if (d.login) map.set(d.login.toUpperCase(), d.supervisor || '');
+    });
+    return map;
+  }, [dadosTecnicos]);
+
   const filteredData = useMemo(() => {
     let d = data;
     if (filters.dataInicial) d = d.filter(r => r.data >= filters.dataInicial);
     if (filters.dataFinal) d = d.filter(r => r.data <= filters.dataFinal);
     if (filters.tecnicos.length > 0) d = d.filter(r => filters.tecnicos.includes(r.recurso));
     if (filters.frentes.length > 0) d = d.filter(r => filters.frentes.includes(r.frente));
+    if (filters.supervisores.length > 0) d = d.filter(r => filters.supervisores.includes(supervisorMap.get(r.login_tecnico?.toUpperCase() || '') || ''));
     return d;
-  }, [data, filters]);
+  }, [data, filters, supervisorMap]);
 
   const tecnicos = useMemo(() => [...new Set(data.map(d => d.recurso))].sort(), [data]);
   const frentes = useMemo(() => [...new Set(data.map(d => d.frente).filter(Boolean))].sort(), [data]);
+
+  const supervisores = useMemo(() => {
+    const set = new Set<string>();
+    data.forEach(d => {
+      const sup = supervisorMap.get(d.login_tecnico?.toUpperCase() || '');
+      if (sup) set.add(sup);
+    });
+    return [...set].sort();
+  }, [data, supervisorMap]);
 
   const totalKm = useMemo(() => filteredData.reduce((s, d) => s + (d.distancia_km || 0), 0), [filteredData]);
   const totalOS = filteredData.length;
@@ -100,7 +130,7 @@ const KmRotas = () => {
     }, 0);
   }, [filteredData, transporteMap]);
 
-  const clearFilters = () => setFilters({ dataInicial: '', dataFinal: '', tecnicos: [], frentes: [] });
+  const clearFilters = () => setFilters({ dataInicial: '', dataFinal: '', tecnicos: [], frentes: [], supervisores: [] });
 
   if (!selectedCity) {
     return (
@@ -109,7 +139,7 @@ const KmRotas = () => {
       </div>
     );
   }
-    if (profile?.role !== 'admin') {
+  if (profile?.role !== 'admin') {
     return (
       <div className="min-h-screen bg-background">
         <DashboardHeader />
@@ -132,6 +162,7 @@ const KmRotas = () => {
         <KmFilters
           tecnicos={tecnicos}
           frentes={frentes}
+          supervisores={supervisores}
           filters={filters}
           onFilterChange={setFilters}
           onClearFilters={clearFilters}
@@ -154,7 +185,7 @@ const KmRotas = () => {
           </TabsList>
 
           <TabsContent value="graficos">
-            <KmChartsTab data={filteredData} transporteMap={transporteMap} />
+            <KmChartsTab data={filteredData} transporteMap={transporteMap} hasActiveFilters={!!(filters.dataInicial || filters.dataFinal || filters.tecnicos.length > 0 || filters.frentes.length > 0 || filters.supervisores.length > 0)} />
           </TabsContent>
           <TabsContent value="mapa">
             <KmMapTab data={filteredData} selectedTecnicos={filters.tecnicos} />
