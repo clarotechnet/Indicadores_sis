@@ -1,5 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
+
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -35,7 +37,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   if (!user) return <Navigate to="/login" replace />;
 
   // Bloqueia acesso se não tem perfil ou não está aprovado
-    if (!profile) {
+  if (!profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -88,7 +90,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <HashRouter>
+      <BrowserRouter>
         <AuthProvider>
           <CityProvider>
             <Routes>
@@ -105,7 +107,7 @@ const App = () => (
             </Routes>
           </CityProvider>
         </AuthProvider>
-      </HashRouter>
+      </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
