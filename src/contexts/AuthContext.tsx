@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import type { Profile } from '@/types/database';
+import type { Profile, SolicitacaoAcesso } from '@/types/database';
 
 interface AuthContextType {
   user: User | null;
@@ -9,20 +9,36 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   profileLoading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, nome: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, nome: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const buildPendingProfile = (authUser: User, solicitacao?: SolicitacaoAcesso | null): Profile => ({
+  id: authUser.id,
+  nome: String(solicitacao?.nome ?? authUser.user_metadata?.nome ?? authUser.email?.split('@')[0] ?? 'Usuário'),
+  email: String(solicitacao?.email ?? authUser.email ?? ''),
+  status_aprovacao: solicitacao?.status === 'rejeitado' ? 'rejeitado' : 'pendente',
+  cidade_permitida: null,
+  role: solicitacao?.role_solicitado === 'admin' ? 'admin' : 'user',
+  created_at: solicitacao?.created_at ?? new Date().toISOString(),
+});
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const profileRef = useRef<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+
+  const updateProfile = (nextProfile: Profile | null) => {
+    profileRef.current = nextProfile;
+    setProfile(nextProfile);
+  };
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
@@ -33,20 +49,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (error) {
       console.error('Erro ao buscar perfil:', error);
-      setProfile(null);
+      updateProfile(null);
       return null;
     }
 
     const profileData = (data as Profile | null) ?? null;
-    setProfile(profileData);
+    updateProfile(profileData);
     return profileData;
   };
 
-  const createMissingProfile = async (authUser: User): Promise<Profile | null> => {
+  const fetchAccessRequest = async (userId: string): Promise<SolicitacaoAcesso | null> => {
+    const { data, error } = await supabase
+      .from('solicitacoes_acesso')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar solicitação de acesso:', error);
+      return null;
+    }
+
+    return (data as SolicitacaoAcesso | null) ?? null;
+  };
+
+  const createMissingProfile = async (authUser: User): Promise<Profile> => {
     const nome = String(authUser.user_metadata?.nome ?? authUser.email?.split('@')[0] ?? 'Usuário');
     const email = authUser.email ?? '';
 
-    const { error } = await (supabase.from('solicitacoes_acesso') as any)
+    const { error } = await supabase
+      .from('solicitacoes_acesso')
       .upsert(
         {
           user_id: authUser.id,
@@ -62,7 +96,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Erro ao criar solicitação de acesso:', error);
     }
 
-    return null;
+    const solicitacao = await fetchAccessRequest(authUser.id);
+    const pendingProfile = buildPendingProfile(authUser, solicitacao);
+    updateProfile(pendingProfile);
+    return pendingProfile;
   };
 
   const ensureProfile = async (authUser: User) => {
@@ -70,6 +107,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const existingProfile = await fetchProfile(authUser.id);
       if (!existingProfile) {
+        const solicitacao = await fetchAccessRequest(authUser.id);
+        if (solicitacao) {
+          updateProfile(buildPendingProfile(authUser, solicitacao));
+          return;
+        }
         await createMissingProfile(authUser);
       }
     } finally {
@@ -82,29 +124,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    let initialLoad = true;
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, currentSession) => {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          // Only show loading spinner on initial load, not on token refresh
-          if (initialLoad) {
+          const currentProfile = profileRef.current;
+          if (currentProfile?.id !== currentSession.user.id || currentProfile.status_aprovacao !== 'aprovado') {
+            setProfileLoading(true);
             setTimeout(() => {
               void ensureProfile(currentSession.user);
             }, 0);
-          } else if (!profile) {
-            // Silently fetch profile without setting profileLoading
-            fetchProfile(currentSession.user.id);
           }
         } else {
-          setProfile(null);
+          updateProfile(null);
         }
 
         setLoading(false);
-        initialLoad = false;
       }
     );
 
@@ -139,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!error && data.user) {
       // Insert into solicitacoes_acesso (staging table)
-      await (supabase.from('solicitacoes_acesso') as any).upsert(
+      await supabase.from('solicitacoes_acesso').upsert(
         {
           user_id: data.user.id,
           nome,
@@ -156,7 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setProfile(null);
+    updateProfile(null);
   };
 
   return (

@@ -29,11 +29,10 @@ const Login = () => {
   const navigate = useNavigate();
 
   const getResetRedirectUrl = () => {
-    const currentPath = window.location.pathname.endsWith('/')
-      ? window.location.pathname
-      : `${window.location.pathname}/`;
+    const base = import.meta.env.BASE_URL || '/';
+    const normalizedBase = base.endsWith('/') ? base : `${base}/`;
 
-    return `${window.location.origin}${currentPath}#/reset-password`;
+    return new URL(`${normalizedBase}reset-password`, window.location.origin).toString();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,8 +73,6 @@ const Login = () => {
 
     const redirectUrl = getResetRedirectUrl();
 
-    console.log('URL de recuperação:', redirectUrl);
-
     const { error } = await supabase.auth.resetPasswordForEmail(emailLimpo, {
       redirectTo: redirectUrl,
     });
@@ -102,7 +99,6 @@ const Login = () => {
               alt="TechNET"
               className="h-16 w-auto rounded-lg"
               loading="eager"
-              fetchPriority="high"
             />
           </div>
 

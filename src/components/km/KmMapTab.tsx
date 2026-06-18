@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Loader2 } from 'lucide-react';
 import type { KmTecnica } from '@/types/database';
+import type * as Leaflet from 'leaflet';
 
 const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY2NjM4NDY2ZDg2NTRiYTc4MTIwNDIxNTU1ODA3OTA2IiwiaCI6Im11cm11cjY0In0=';
 
@@ -29,8 +30,8 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [routeSegments, setRouteSegments] = useState<RouteSegment[]>([]);
-  const mapInstanceRef = useRef<any>(null);
-  const layersRef = useRef<any[]>([]);
+  const mapInstanceRef = useRef<Leaflet.Map | null>(null);
+  const layersRef = useRef<Leaflet.Layer[]>([]);
 
   // Get route geometry between two coordinate pairs
   const getRoute = useCallback(async (
@@ -129,7 +130,7 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
       const L = await import('leaflet');
       await import('leaflet/dist/leaflet.css');
 
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
         iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
@@ -145,6 +146,7 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
       }
 
       const map = mapInstanceRef.current;
+      if (!map) return;
 
       // Clear old layers
       layersRef.current.forEach(l => map.removeLayer(l));

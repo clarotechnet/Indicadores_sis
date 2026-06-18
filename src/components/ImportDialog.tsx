@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { useCity } from '@/contexts/CityContext';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import type { DadoTecnico } from '@/types/database';
+import type { DadoTecnico, HorarioEntradaTecnico, HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
 
 interface ImportDialogProps {
   open: boolean;
@@ -13,7 +13,13 @@ interface ImportDialogProps {
   onImportComplete: () => void;
 }
 
-const COLUMN_MAP: Record<string, string> = {
+type ExcelCell = string | number | boolean | null | undefined;
+type ExcelRow = Record<string, ExcelCell>;
+type IndicadorImportRow = Pick<IndicadorTecnico, 'data_referencia' | 'login' | 'tecnico' | 'supervisor' | 'cidade'> & Partial<Record<IndicadorKey, number | null>>;
+type HorarioImportRow = Pick<HorarioPrimeiroCliente, 'data_referencia' | 'login' | 'tecnico' | 'supervisor' | 'cidade' | 'horario_primeiro_cliente' | 'classificacao_horario'>;
+type HoraEntradaImportRow = Pick<HorarioEntradaTecnico, 'data' | 'login_tecnico' | 'hora_entrada' | 'cidade'>;
+
+const COLUMN_MAP: Record<string, IndicadorKey | 'horario_primeiro_cliente'> = {
   'NR35': 'nr35',
   'TNPS': 'tnps',
   'INSPEÇÃO E.': 'inspecao_e',
@@ -35,6 +41,9 @@ const COLUMN_MAP: Record<string, string> = {
   'HORÁRIO': 'horario_primeiro_cliente',
 };
 
+const horaEntradaKeyOf = (row: { data: string; login_tecnico: string; cidade: string }) =>
+  `${row.cidade}|${row.data}|${row.login_tecnico.toUpperCase()}`;
+
 const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImportComplete }) => {
   const { selectedCity } = useCity();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,10 +58,16 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
     setResult(null);
 
     try {
+      if (!selectedCity) {
+        setResult({ success: 0, errors: ['Selecione uma cidade antes de importar.'], skipped: 0 });
+        setLoading(false);
+        return;
+      }
+
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
+      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(ws);
 
       if (jsonData.length === 0) {
         setResult({ success: 0, errors: ['Arquivo vazio.'], skipped: 0 });
@@ -106,12 +121,18 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
       const horaEntradaKey = Object.keys(jsonData[0]).find((k) => k.trim().toUpperCase() === 'HORA_ENTRADA');
       const hasHoraEntrada = !!horaEntradaKey;
 
+      if (indicatorCols.length === 0 && !hasHorario && !hasHoraEntrada) {
+        setResult({ success: 0, errors: ['Nenhuma coluna de indicador, horário ou HORA_ENTRADA foi encontrada.'], skipped: 0 });
+        setLoading(false);
+        return;
+      }
+
       let success = 0;
       let skipped = 0;
       const errors: string[] = [];
-      const indicadorRows: any[] = [];
-      const horarioRows: any[] = [];
-      const horaEntradaRows: any[] = [];
+      const indicadorRows: IndicadorImportRow[] = [];
+      const horarioRows: HorarioImportRow[] = [];
+      const horaEntradaRows: HoraEntradaImportRow[] = [];
       for (const row of jsonData) {
         const loginKey = Object.keys(row).find((k) => ['LOGIN', 'LOGIN_TECNICO'].includes(k.trim().toUpperCase()));
         if (!loginKey) continue;
@@ -137,7 +158,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
             const d = XLSX.SSF.parse_date_code(raw);
             dataRef = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
           } else {
-            const parts = String(raw).split(/[\/\-]/);
+            const parts = String(raw).split(/[/-]/);
             if (parts.length === 3) {
               if (parts[0].length === 4) dataRef = parts.join('-');
               else dataRef = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
@@ -151,7 +172,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
 
         // Indicadores row
         if (indicatorCols.length > 0) {
-          const indicadorRow: any = {
+          const indicadorRow: IndicadorImportRow = {
             data_referencia: dataRef,
             login: tecnico.login,
             tecnico: tecnico.nome,
@@ -160,7 +181,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
           };
           indicatorCols.forEach((col) => {
             const val = row[col.original];
-            indicadorRow[col.mapped] = val !== undefined && val !== '' ? Number(val) : null;
+            indicadorRow[col.mapped as IndicadorKey] = val !== undefined && val !== '' ? Number(val) : null;
           });
           indicadorRows.push(indicadorRow);
         }
@@ -240,7 +261,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
       if (indicadorRows.length > 0) {
         const { error } = await supabase
           .from('indicadores_tecnicos')
-          .upsert(indicadorRows as any, { onConflict: 'login,data_referencia' });
+          .upsert(indicadorRows, { onConflict: 'login,data_referencia' });
         if (error) errors.push(`Erro ao salvar indicadores: ${error.message}`);
       }
 
@@ -248,22 +269,60 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
       if (horarioRows.length > 0) {
         const { error } = await supabase
           .from('horario_primeiro_cliente')
-          .upsert(horarioRows as any, { onConflict: 'login,data_referencia' });
+          .upsert(horarioRows, { onConflict: 'login,data_referencia' });
         if (error) errors.push(`Erro ao salvar horários: ${error.message}`);
       }
 
-      // Insert hora_entrada
+      // Insert hora_entrada without duplicating rows already imported.
       if (horaEntradaRows.length > 0) {
-        const { error } = await supabase
-          .from('horario_entrada_tecnico')
-          .insert(horaEntradaRows as any);
-        if (error) errors.push(`Erro ao salvar hora entrada: ${error.message}`);
+        const seen = new Set<string>();
+        const uniqueHoraEntradaRows = horaEntradaRows.filter((row) => {
+          const key = horaEntradaKeyOf(row);
+          if (seen.has(key)) {
+            skipped++;
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+
+        const datas = [...new Set(uniqueHoraEntradaRows.map((row) => row.data))];
+        let rowsToInsert = uniqueHoraEntradaRows;
+
+        if (datas.length > 0) {
+          const { data: existingRows, error: existingError } = await supabase
+            .from('horario_entrada_tecnico')
+            .select('data,login_tecnico,cidade')
+            .eq('cidade', selectedCity)
+            .in('data', datas);
+
+          if (existingError) {
+            errors.push(`Erro ao verificar hora entrada existente: ${existingError.message}`);
+          } else {
+            const existingKeys = new Set(
+              ((existingRows as Array<{ data: string; login_tecnico: string; cidade: string }> | null) ?? [])
+                .map(horaEntradaKeyOf)
+            );
+            rowsToInsert = uniqueHoraEntradaRows.filter((row) => {
+              const alreadyExists = existingKeys.has(horaEntradaKeyOf(row));
+              if (alreadyExists) skipped++;
+              return !alreadyExists;
+            });
+          }
+        }
+
+        if (rowsToInsert.length > 0) {
+          const { error } = await supabase
+            .from('horario_entrada_tecnico')
+            .insert(rowsToInsert);
+          if (error) errors.push(`Erro ao salvar hora entrada: ${error.message}`);
+        }
       }
 
       setResult({ success, errors: errors.slice(0, 20), skipped });
       if (success > 0) onImportComplete();
-    } catch (err: any) {
-      setResult({ success: 0, errors: [err.message || 'Erro ao processar arquivo.'], skipped: 0 });
+    } catch (err: unknown) {
+      setResult({ success: 0, errors: [err instanceof Error ? err.message : 'Erro ao processar arquivo.'], skipped: 0 });
     }
 
     setLoading(false);

@@ -54,7 +54,8 @@ const Admin = () => {
 
   const fetchSolicitacoes = async () => {
     setLoadingSolicitacoes(true);
-    const { data, error } = await (supabase.from('solicitacoes_acesso') as any)
+    const { data, error } = await supabase
+      .from('solicitacoes_acesso')
       .select('*')
       .order('created_at', { ascending: false });
     if (error) {
@@ -76,7 +77,7 @@ const Admin = () => {
   const aprovarSolicitacao = async (solicitacao: SolicitacaoAcesso) => {
     setUpdating(solicitacao.id);
     const role = selectedRoles[solicitacao.id] || 'user';
-    const { error: insertError } = await (supabase.from('profiles') as any).upsert(
+    const { error: insertError } = await supabase.from('profiles').upsert(
       { id: solicitacao.user_id, nome: solicitacao.nome, email: solicitacao.email, status_aprovacao: 'aprovado', cidade_permitida: null, role },
       { onConflict: 'id' }
     );
@@ -85,7 +86,7 @@ const Admin = () => {
       setUpdating(null);
       return;
     }
-    const { error: deleteError } = await (supabase.from('solicitacoes_acesso') as any).delete().eq('id', solicitacao.id);
+    const { error: deleteError } = await supabase.from('solicitacoes_acesso').delete().eq('id', solicitacao.id);
     if (deleteError) toast.error(`Usuário aprovado, mas falhou ao remover solicitação: ${deleteError.message}`);
     await fetchUsers();
     await fetchSolicitacoes();
@@ -95,7 +96,7 @@ const Admin = () => {
 
   const rejeitarSolicitacao = async (solicitacao: SolicitacaoAcesso) => {
     setUpdating(solicitacao.id);
-    const { error } = await (supabase.from('solicitacoes_acesso') as any).update({ status: 'rejeitado' }).eq('id', solicitacao.id);
+    const { error } = await supabase.from('solicitacoes_acesso').update({ status: 'rejeitado' }).eq('id', solicitacao.id);
     if (error) {
       toast.error(`Falha ao rejeitar solicitação: ${error.message}`);
       setUpdating(null);
@@ -108,7 +109,7 @@ const Admin = () => {
 
   const updateUserRole = async (userId: string, role: 'admin' | 'user') => {
     setUpdating(userId);
-    const { error } = await (supabase.from('profiles') as any).update({ role }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
     if (error) {
       toast.error(`Falha ao atualizar nível de acesso: ${error.message}`);
       setUpdating(null);
@@ -209,7 +210,7 @@ const Admin = () => {
           disabled={updating === user.id}
           onClick={async () => {
             setUpdating(user.id);
-            await (supabase.from('profiles') as any).update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
+            await supabase.from('profiles').update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
             await fetchUsers();
             setUpdating(null);
           }}
@@ -413,7 +414,7 @@ const Admin = () => {
                                     disabled={updating === user.id}
                                     onClick={async () => {
                                       setUpdating(user.id);
-                                      await (supabase.from('profiles') as any).update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
+                                      await supabase.from('profiles').update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
                                       await fetchUsers();
                                       setUpdating(null);
                                     }}

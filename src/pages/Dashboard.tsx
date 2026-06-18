@@ -1,46 +1,108 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { AlertCircle, CalendarDays } from 'lucide-react';
+import * as XLSX from 'xlsx';
+
+import ComparativoHroTab from '@/components/ComparativoHroTab';
+import DashboardFilters, { type DashboardFilterState } from '@/components/DashboardFilters';
+import DashboardHeader from '@/components/DashboardHeader';
+import HorarioTab from '@/components/HorarioTab';
+import ImportDialog from '@/components/ImportDialog';
+import IndicatorTab from '@/components/IndicatorTab';
+import ResumoTab from '@/components/ResumoTab';
+import SupervisorTab from '@/components/SupervisorTab';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCity } from '@/contexts/CityContext';
 import { supabase } from '@/lib/supabase';
-import DashboardHeader from '@/components/DashboardHeader';
-import DashboardFilters from '@/components/DashboardFilters';
-import IndicatorTab from '@/components/IndicatorTab';
-import SupervisorTab from '@/components/SupervisorTab';
-import HorarioTab from '@/components/HorarioTab';
-import ComparativoHroTab from '@/components/ComparativoHroTab';
-import ResumoTab from '@/components/ResumoTab';
-import ImportDialog from '@/components/ImportDialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import type { IndicadorTecnico, HorarioPrimeiroCliente, IndicadorKey } from '@/types/database';
+import type { HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
 import { INDICADOR_LABELS } from '@/types/database';
-import * as XLSX from 'xlsx';
 
 const INDICATOR_KEYS: IndicadorKey[] = ['nr35', 'tnps', 'inspecao_e', 'revisita', 'os_dig', 'geo', 'ura', 'tec1', 'bds'];
 
 const getStoredTab = (): string => {
   try {
     return localStorage.getItem('technet_active_tab') || 'resumo';
-  } catch { return 'resumo'; }
+  } catch {
+    return 'resumo';
+  }
 };
 
 const Dashboard = () => {
-  const { profile } = useAuth();
   const { selectedCity } = useCity();
   const navigate = useNavigate();
 
   const [allIndicadores, setAllIndicadores] = useState<IndicadorTecnico[]>([]);
   const [allHorarios, setAllHorarios] = useState<HorarioPrimeiroCliente[]>([]);
   const [latestDate, setLatestDate] = useState<string>('');
+  const [loadError, setLoadError] = useState<string>('');
   const [importOpen, setImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(getStoredTab);
-  const [filters, setFilters] = useState({
-    tecnicos: [] as string[],
-    supervisores: [] as string[],
+  const [filters, setFilters] = useState<DashboardFilterState>({
+    tecnicos: [],
+    supervisores: [],
     dataInicial: '',
     dataFinal: '',
     busca: '',
   });
+
+  const fetchData = async () => {
+    if (!selectedCity) return;
+    setLoadError('');
+
+    const fetchAll = async <T,>(table: 'indicadores_tecnicos' | 'horario_primeiro_cliente'): Promise<T[]> => {
+      const PAGE = 1000;
+      let from = 0;
+      const all: T[] = [];
+
+      while (true) {
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .eq('cidade', selectedCity)
+          .order('data_referencia', { ascending: true })
+          .order('login', { ascending: true })
+          .range(from, from + PAGE - 1);
+
+        if (error) {
+          throw new Error(`Erro ao buscar ${table}: ${error.message}`);
+        }
+        if (!data) break;
+
+        all.push(...(data as T[]));
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+
+      return all;
+    };
+
+    try {
+      const [ind, hor] = await Promise.all([
+        fetchAll<IndicadorTecnico>('indicadores_tecnicos'),
+        fetchAll<HorarioPrimeiroCliente>('horario_primeiro_cliente'),
+      ]);
+
+      setAllIndicadores(ind);
+      setAllHorarios(hor);
+
+      if (ind.length > 0) {
+        const maxDate = ind.reduce(
+          (max, d) => (d.data_referencia > max ? d.data_referencia : max),
+          ind[0].data_referencia,
+        );
+        setLatestDate(maxDate);
+      } else {
+        setLatestDate('');
+      }
+    } catch (error) {
+      setAllIndicadores([]);
+      setAllHorarios([]);
+      setLatestDate('');
+      setLoadError(error instanceof Error ? error.message : 'Erro ao carregar dados do dashboard.');
+    }
+  };
 
   useEffect(() => {
     if (!selectedCity) {
@@ -52,80 +114,20 @@ const Dashboard = () => {
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    try { localStorage.setItem('technet_active_tab', value); } catch {}
-  };
-
-  const fetchData = async () => {
-    if (!selectedCity) return;
-
-    const fetchAll = async <T,>(table: 'indicadores_tecnicos' | 'horario_primeiro_cliente'): Promise<T[]> => {
-      const PAGE = 1000;
-      let from = 0;
-      const all: T[] = [];
-      while (true) {
-        const { data, error } = await supabase
-          .from(table)
-          .select('*')
-          .eq('cidade', selectedCity)
-          .range(from, from + PAGE - 1);
-        if (error || !data) break;
-        all.push(...(data as T[]));
-        if (data.length < PAGE) break;
-        from += PAGE;
-      }
-      return all;
-    };
-
-    const [ind, hor] = await Promise.all([
-      fetchAll<IndicadorTecnico>('indicadores_tecnicos'),
-      fetchAll<HorarioPrimeiroCliente>('horario_primeiro_cliente'),
-    ]);
-
-    setAllIndicadores(ind);
-    setAllHorarios(hor);
-
-    // Detectar a data_referencia mais recente
-    if (ind.length > 0) {
-      const maxDate = ind.reduce((max, d) =>
-        d.data_referencia > max ? d.data_referencia : max
-      , ind[0].data_referencia);
-      setLatestDate(maxDate);
+    try {
+      localStorage.setItem('technet_active_tab', value);
+    } catch {
+      // Ignore localStorage errors when storage is unavailable.
     }
   };
 
-  // Dados usados para popular listas de filtros (todos os dados, sem filtro de data)
   const indicadores = allIndicadores;
   const horarios = allHorarios;
 
-  // Filter data
   const filteredData = useMemo(() => {
     let data = indicadores;
-        if (filters.tecnicos.length > 0) {
-      data = data.filter((d) => filters.tecnicos.includes(d.tecnico));
-    }
-     if (filters.supervisores.length > 0) {
-      data = data.filter((d) => filters.supervisores.includes(d.supervisor));
-    }
-    if (filters.dataInicial) {
-      data = data.filter((d) => d.data_referencia >= filters.dataInicial);
-    }
-    if (filters.dataFinal) {
-      data = data.filter((d) => d.data_referencia <= filters.dataFinal);
-    }
-    if (filters.busca) {
-      const q = filters.busca.toLowerCase();
-      data = data.filter((d) =>
-        d.tecnico.toLowerCase().includes(q) ||
-        d.supervisor.toLowerCase().includes(q) ||
-        d.login.toLowerCase().includes(q)
-      );
-    }
-    return data;
-  }, [indicadores, filters]);
 
-  const filteredHorarios = useMemo(() => {
-    let data = horarios;
-      if (filters.tecnicos.length > 0) {
+    if (filters.tecnicos.length > 0) {
       data = data.filter((d) => filters.tecnicos.includes(d.tecnico));
     }
     if (filters.supervisores.length > 0) {
@@ -142,9 +144,37 @@ const Dashboard = () => {
       data = data.filter((d) =>
         d.tecnico.toLowerCase().includes(q) ||
         d.supervisor.toLowerCase().includes(q) ||
-        d.login.toLowerCase().includes(q)
+        d.login.toLowerCase().includes(q),
       );
     }
+
+    return data;
+  }, [indicadores, filters]);
+
+  const filteredHorarios = useMemo(() => {
+    let data = horarios;
+
+    if (filters.tecnicos.length > 0) {
+      data = data.filter((d) => filters.tecnicos.includes(d.tecnico));
+    }
+    if (filters.supervisores.length > 0) {
+      data = data.filter((d) => filters.supervisores.includes(d.supervisor));
+    }
+    if (filters.dataInicial) {
+      data = data.filter((d) => d.data_referencia >= filters.dataInicial);
+    }
+    if (filters.dataFinal) {
+      data = data.filter((d) => d.data_referencia <= filters.dataFinal);
+    }
+    if (filters.busca) {
+      const q = filters.busca.toLowerCase();
+      data = data.filter((d) =>
+        d.tecnico.toLowerCase().includes(q) ||
+        d.supervisor.toLowerCase().includes(q) ||
+        d.login.toLowerCase().includes(q),
+      );
+    }
+
     return data;
   }, [horarios, filters]);
 
@@ -175,8 +205,8 @@ const Dashboard = () => {
 
   if (!selectedCity) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <span className="text-muted-foreground text-sm">Redirecionando...</span>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <span className="text-sm text-muted-foreground">Redirecionando...</span>
       </div>
     );
   }
@@ -185,19 +215,29 @@ const Dashboard = () => {
     <div className="min-h-screen bg-background">
       <DashboardHeader />
 
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="dashboard-container flex flex-col gap-4 sm:gap-5">
+        {loadError && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
+
         {latestDate && (
-          <div className="flex items-center gap-2 text-sm bg-primary/10 text-primary rounded-lg px-4 py-2 border border-primary/20">
-            <span className="font-medium">📅 Último envio no banco:</span>
-            <span>{new Date(latestDate + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+          <div className="dashboard-panel flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
+            <CalendarDays className="size-4 text-primary" />
+            <span className="font-semibold text-foreground">Último envio no banco</span>
+            <Badge variant="secondary">
+              {new Date(latestDate + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+            </Badge>
             {!isDateFiltered && (
-              <span className="text-xs bg-primary/20 px-2 py-0.5 rounded-full ml-1 font-semibold">Exibindo dados mais recentes por padrão (Gráficos mostram histórico)</span>
+              <span className="text-xs text-muted-foreground">Dados recentes por padrão. Gráficos preservam o histórico.</span>
             )}
             {isDateFiltered && (
-              <span className="text-xs text-muted-foreground ml-1">
-                (exibindo período filtrado: {filters.dataInicial ? new Date(filters.dataInicial + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'início'}
-                {' → '}
-                {filters.dataFinal ? new Date(filters.dataFinal + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'fim'})
+              <span className="text-xs text-muted-foreground">
+                Período filtrado: {filters.dataInicial ? new Date(filters.dataInicial + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'início'}
+                {' até '}
+                {filters.dataFinal ? new Date(filters.dataFinal + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'fim'}
               </span>
             )}
           </div>
@@ -215,39 +255,47 @@ const Dashboard = () => {
         />
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 pb-1">
-            <TabsList className="inline-flex w-max sm:flex sm:flex-wrap sm:w-full h-auto gap-1 bg-card border border-border p-1">
-              <TabsTrigger value="resumo" className="text-xs whitespace-nowrap">Resumo</TabsTrigger>
+          <div className="overflow-x-auto pb-1">
+            <TabsList className="inline-flex h-auto w-max gap-1 border border-border bg-card p-1 sm:flex sm:w-full sm:flex-wrap sm:justify-start">
+              <TabsTrigger value="resumo" className="whitespace-nowrap text-xs sm:text-sm">
+                Resumo
+              </TabsTrigger>
               {INDICATOR_KEYS.map((key) => (
-                <TabsTrigger key={key} value={key} className="text-xs whitespace-nowrap">
+                <TabsTrigger key={key} value={key} className="whitespace-nowrap text-xs sm:text-sm">
                   {INDICADOR_LABELS[key]}
                 </TabsTrigger>
               ))}
-              <TabsTrigger value="horario" className="text-xs whitespace-nowrap">HORÁRIO</TabsTrigger>
-              <TabsTrigger value="comparativo_hro" className="text-xs whitespace-nowrap">COMPARATIVO_HRO</TabsTrigger>
-              <TabsTrigger value="supervisor" className="text-xs whitespace-nowrap">SUPERVISOR</TabsTrigger>
+              <TabsTrigger value="horario" className="whitespace-nowrap text-xs sm:text-sm">
+                Horário
+              </TabsTrigger>
+              <TabsTrigger value="comparativo_hro" className="whitespace-nowrap text-xs sm:text-sm">
+                Comparativo HRO
+              </TabsTrigger>
+              <TabsTrigger value="supervisor" className="whitespace-nowrap text-xs sm:text-sm">
+                Supervisor
+              </TabsTrigger>
             </TabsList>
           </div>
 
-          <TabsContent value="resumo">
+          <TabsContent value="resumo" className="mt-4">
             <ResumoTab data={filteredData} cidade={selectedCity || ''} isDateFiltered={isDateFiltered} />
           </TabsContent>
 
           {INDICATOR_KEYS.map((key) => (
-            <TabsContent key={key} value={key}>
+            <TabsContent key={key} value={key} className="mt-4">
               <IndicatorTab data={filteredData} indicatorKey={key} label={INDICADOR_LABELS[key]} isDateFiltered={isDateFiltered} />
             </TabsContent>
           ))}
 
-          <TabsContent value="horario">
+          <TabsContent value="horario" className="mt-4">
             <HorarioTab data={filteredHorarios} isDateFiltered={isDateFiltered} />
           </TabsContent>
-          
-          <TabsContent value="comparativo_hro">
+
+          <TabsContent value="comparativo_hro" className="mt-4">
             <ComparativoHroTab horarioData={filteredHorarios} />
           </TabsContent>
 
-          <TabsContent value="supervisor">
+          <TabsContent value="supervisor" className="mt-4">
             <SupervisorTab data={filteredData} isDateFiltered={isDateFiltered} />
           </TabsContent>
         </Tabs>

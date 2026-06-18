@@ -1,8 +1,10 @@
 import React from 'react';
+import { Filter, Upload, X } from 'lucide-react';
+
+import MultiSelectCombobox from '@/components/MultiSelectCombobox';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import MultiSelectCombobox from '@/components/MultiSelectCombobox';
-import { Upload, Plus, X, Download } from 'lucide-react';
 
 export interface KmFilterState {
   dataInicial: string;
@@ -24,75 +26,112 @@ interface KmFiltersProps {
 }
 
 const KmFilters: React.FC<KmFiltersProps> = ({
-  tecnicos, frentes, supervisores, filters, onFilterChange, onClearFilters, onImport, onManualAdd,
+  tecnicos,
+  frentes,
+  supervisores,
+  filters,
+  onFilterChange,
+  onClearFilters,
+  onImport,
 }) => {
-  const hasFilters = filters.dataInicial || filters.dataFinal || filters.tecnicos.length > 0 || filters.frentes.length > 0 || filters.supervisores.length > 0;
+  const activeCount = [
+    filters.dataInicial ? 1 : 0,
+    filters.dataFinal ? 1 : 0,
+    filters.tecnicos.length,
+    filters.frentes.length,
+    filters.supervisores.length,
+  ].reduce((sum, value) => sum + value, 0);
+  const hasFilters = activeCount > 0;
 
   return (
-    <div className="bg-card border border-border rounded-xl p-3 sm:p-4 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={onImport}>
-          <Upload className="h-4 w-4 mr-1" /> Importar
-        </Button>
-        {/* <Button size="sm" variant="outline" onClick={onManualAdd}>
-          <Plus className="h-4 w-4 mr-1" /> Adicionar
-        </Button> */}
-        {hasFilters && (
-          <Button size="sm" variant="ghost" onClick={onClearFilters}>
-            <X className="h-4 w-4 mr-1" /> Limpar filtros
+    <section className="dashboard-panel p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Filter className="size-4 text-primary" />
+          Filtros
+          {hasFilters && <Badge variant="secondary">{activeCount} ativos</Badge>}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onClearFilters} disabled={!hasFilters} className="cursor-pointer">
+            <X />
+            Limpar
           </Button>
-        )}
+          <Button size="sm" onClick={onImport} className="cursor-pointer">
+            <Upload />
+            Importar
+          </Button>
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-        <div className='flex flex-col gap-2'>
-          <label className='text-sm font-medium text-gray-700'>Data inicial</label>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="km-data-inicial" className="text-xs font-semibold uppercase text-muted-foreground">
+            Data inicial
+          </label>
           <Input
+            id="km-data-inicial"
             type="date"
             value={filters.dataInicial}
-            onChange={e => onFilterChange({ ...filters, dataInicial: e.target.value })}
-            placeholder="Data inicial"
-            className="text-sm"
+            onChange={(e) => onFilterChange({ ...filters, dataInicial: e.target.value })}
           />
         </div>
-        <div className='flex flex-col gap-2'>
-          <label className='text-sm font-medium text-gray-700'>Data Final</label>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="km-data-final" className="text-xs font-semibold uppercase text-muted-foreground">
+            Data final
+          </label>
           <Input
+            id="km-data-final"
             type="date"
             value={filters.dataFinal}
-            onChange={e => onFilterChange({ ...filters, dataFinal: e.target.value })}
-            placeholder="Data final"
-            className="text-sm"
+            onChange={(e) => onFilterChange({ ...filters, dataFinal: e.target.value })}
           />
         </div>
-        <div className='flex flex-col gap-2'>
-          <label className='text-sm font-medium text-gray-700'>Técnico</label>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="km-tecnicos" className="text-xs font-semibold uppercase text-muted-foreground">
+            Técnico
+          </label>
           <MultiSelectCombobox
+            id="km-tecnicos"
+            aria-label="Filtrar KM por técnico"
             options={tecnicos}
             selected={filters.tecnicos}
-            onChange={v => onFilterChange({ ...filters, tecnicos: v })}
-            placeholder="Técnicos"
+            onChange={(v) => onFilterChange({ ...filters, tecnicos: v })}
+            placeholder="Todos os técnicos"
           />
         </div>
-        <div className='flex flex-col gap-2'>
-          <label className='text-sm font-medium text-gray-700'>Supervisores</label>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="km-supervisores" className="text-xs font-semibold uppercase text-muted-foreground">
+            Supervisor
+          </label>
           <MultiSelectCombobox
+            id="km-supervisores"
+            aria-label="Filtrar KM por supervisor"
             options={supervisores}
             selected={filters.supervisores}
-            onChange={v => onFilterChange({ ...filters, supervisores: v })}
-            placeholder="Supervisores"
+            onChange={(v) => onFilterChange({ ...filters, supervisores: v })}
+            placeholder="Todos os supervisores"
           />
         </div>
-        <div className='flex flex-col gap-2'>
-          <label className='text-sm font-medium text-gray-700'>Frente</label>
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="km-frentes" className="text-xs font-semibold uppercase text-muted-foreground">
+            Frente
+          </label>
           <MultiSelectCombobox
+            id="km-frentes"
+            aria-label="Filtrar KM por frente"
             options={frentes}
             selected={filters.frentes}
-            onChange={v => onFilterChange({ ...filters, frentes: v })}
-            placeholder="Frente"
+            onChange={(v) => onFilterChange({ ...filters, frentes: v })}
+            placeholder="Todas as frentes"
           />
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

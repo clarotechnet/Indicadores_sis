@@ -62,14 +62,14 @@ const ResetPasswordPage = () => {
   };
 
   const cleanUrl = () => {
-    const currentPath = window.location.pathname.endsWith('/')
-      ? window.location.pathname
-      : `${window.location.pathname}/`;
+    const base = import.meta.env.BASE_URL || '/';
+    const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+    const resetUrl = new URL(`${normalizedBase}reset-password`, window.location.origin);
 
     window.history.replaceState(
       {},
       document.title,
-      `${window.location.origin}${currentPath}#/reset-password`
+      resetUrl.pathname
     );
   };
 

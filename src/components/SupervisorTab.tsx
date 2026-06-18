@@ -13,9 +13,12 @@ interface SupervisorTabProps {
 
 const INDICATOR_KEYS: IndicadorKey[] = ['nr35', 'tnps', 'inspecao_e', 'revisita', 'os_dig', 'geo', 'ura', 'tec1', 'bds'];
 
+type MetricRow = Pick<IndicadorTecnico, 'login' | 'tecnico' | 'supervisor'> & Record<IndicadorKey, number | null>;
+type SupervisorLineRow = { data: string } & Record<string, string | number | null>;
+
 const SupervisorTab: React.FC<SupervisorTabProps> = ({ data, isDateFiltered = false }) => {
   const latestDataForMetrics = React.useMemo(() => {
-    if (isDateFiltered) return data;
+    if (isDateFiltered) return data as MetricRow[];
 
     const tecnicoNames: Record<string, string> = {};
     const tecnicoSupervisores: Record<string, string> = {};
@@ -38,15 +41,24 @@ const SupervisorTab: React.FC<SupervisorTabProps> = ({ data, isDateFiltered = fa
     });
 
     return Object.entries(latestRecordByKey).map(([login, keysObj]) => {
-      const entry: any = {
+      const entry: MetricRow = {
         login,
         tecnico: tecnicoNames[login],
         supervisor: tecnicoSupervisores[login],
+        nr35: null,
+        tnps: null,
+        inspecao_e: null,
+        revisita: null,
+        os_dig: null,
+        geo: null,
+        ura: null,
+        tec1: null,
+        bds: null,
       };
       INDICATOR_KEYS.forEach((key) => {
         entry[key] = keysObj[key] !== undefined ? keysObj[key].valor : null;
       });
-      return entry as IndicadorTecnico;
+      return entry;
     });
   }, [data, isDateFiltered]);
 
@@ -65,7 +77,9 @@ const SupervisorTab: React.FC<SupervisorTabProps> = ({ data, isDateFiltered = fa
   });
 
   const supervisorAvgs = Object.entries(bySupervisor).map(([nome, { sums, counts }]) => {
-    const avgs = INDICATOR_KEYS.map((key) => counts[key] ? sums[key] / counts[key] : null).filter(Boolean) as number[];
+    const avgs = INDICATOR_KEYS
+      .map((key) => counts[key] ? sums[key] / counts[key] : null)
+      .filter((value): value is number => value !== null);
     const mediaGeral = avgs.length > 0 ? avgs.reduce((a, b) => a + b, 0) / avgs.length : 0;
     return { nome, valor: mediaGeral };
   }).sort((a, b) => b.valor - a.valor);
@@ -92,7 +106,7 @@ const SupervisorTab: React.FC<SupervisorTabProps> = ({ data, isDateFiltered = fa
   const lineData = Object.entries(byDateSup)
   .sort(([a], [b]) => a.localeCompare(b))
   .map(([date, sups]) => {
-    const entry: any = {
+    const entry: SupervisorLineRow = {
       data: new Date(`${date}T00:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
     };
 

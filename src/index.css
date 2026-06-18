@@ -6,44 +6,44 @@
 
 @layer base {
   :root {
-    --background: 0 0% 96%;
-    --foreground: 0 0% 10%;
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 0 72% 51%;
+    --primary: 356 75% 46%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 94%;
-    --secondary-foreground: 0 0% 15%;
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 0 0% 94%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 10% 38%;
 
-    --accent: 0 0% 94%;
-    --accent-foreground: 0 0% 10%;
+    --accent: 221 83% 95%;
+    --accent-foreground: 222 47% 11%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 88%;
-    --input: 0 0% 88%;
-    --ring: 0 72% 51%;
+    --border: 220 14% 88%;
+    --input: 220 14% 88%;
+    --ring: 356 75% 46%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 0 0% 26%;
-    --sidebar-primary: 0 72% 51%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 20% 22%;
+    --sidebar-primary: 356 75% 46%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 94%;
-    --sidebar-accent-foreground: 0 0% 10%;
-    --sidebar-border: 0 0% 91%;
-    --sidebar-ring: 0 72% 51%;
+    --sidebar-accent: 220 14% 94%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 220 14% 88%;
+    --sidebar-ring: 356 75% 46%;
 
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
@@ -52,42 +52,42 @@
   }
 
   .dark {
-    --background: 0 0% 7%;
-    --foreground: 0 0% 95%;
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
 
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 95%;
+    --card: 222 32% 12%;
+    --card-foreground: 210 40% 96%;
 
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 222 32% 12%;
+    --popover-foreground: 210 40% 96%;
 
-    --primary: 0 72% 51%;
+    --primary: 356 72% 56%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 18%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 222 24% 18%;
+    --secondary-foreground: 210 40% 96%;
 
-    --muted: 0 0% 18%;
-    --muted-foreground: 0 0% 55%;
+    --muted: 222 24% 18%;
+    --muted-foreground: 215 18% 72%;
 
-    --accent: 0 0% 18%;
-    --accent-foreground: 0 0% 95%;
+    --accent: 222 24% 20%;
+    --accent-foreground: 210 40% 96%;
 
     --destructive: 0 62% 30%;
     --destructive-foreground: 0 0% 95%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 72% 51%;
+    --border: 222 20% 22%;
+    --input: 222 20% 22%;
+    --ring: 356 72% 56%;
 
-    --sidebar-background: 0 0% 10%;
-    --sidebar-foreground: 0 0% 90%;
-    --sidebar-primary: 0 72% 51%;
+    --sidebar-background: 222 32% 10%;
+    --sidebar-foreground: 210 40% 92%;
+    --sidebar-primary: 356 72% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 15%;
-    --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 0 72% 51%;
+    --sidebar-accent: 222 24% 17%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 222 20% 22%;
+    --sidebar-ring: 356 72% 56%;
 
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
@@ -105,12 +105,29 @@
     @apply bg-background text-foreground font-sans;
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    @apply bg-primary/15 text-foreground;
   }
 }
 
 @layer utilities {
   .font-display {
     font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .dashboard-container {
+    @apply mx-auto w-full max-w-[1480px] px-3 py-4 sm:px-5 sm:py-5 lg:px-6;
+  }
+
+  .dashboard-panel {
+    @apply rounded-lg border border-border bg-card shadow-sm;
+  }
+
+  .dashboard-grid-gap {
+    @apply gap-3 sm:gap-4;
   }
 }
 

@@ -19,6 +19,16 @@ interface Props {
   data: ExcessoMiscelanea[];
 }
 
+interface TooltipPayload<T> {
+  payload?: T;
+}
+
+interface ChartTooltipProps<T> {
+  active?: boolean;
+  payload?: TooltipPayload<T>[];
+  label?: string;
+}
+
 const formatPercent = (value: number) =>
   value.toLocaleString('pt-BR', {
     minimumFractionDigits: value >= 10 ? 0 : 1,
@@ -108,7 +118,7 @@ const MiscGraficos: React.FC<Props> = ({ data }) => {
       }));
   }, [data]);
 
-    const CustomBarTooltip = ({ active, payload, label }: any) => {
+  const CustomBarTooltip = ({ active, payload, label }: ChartTooltipProps<(typeof dailyData)[number]>) => {
     if (!active || !payload?.length) return null;
     const item = payload[0]?.payload;
     if (!item) return null;
@@ -127,7 +137,7 @@ const MiscGraficos: React.FC<Props> = ({ data }) => {
     );
   };
 
-  const CustomPieTooltip = ({ active, payload }: any) => {
+  const CustomPieTooltip = ({ active, payload }: ChartTooltipProps<(typeof equipamentoData)[number]>) => {
     if (!active || !payload?.length) return null;
 
     const item = payload[0]?.payload;

@@ -23,6 +23,24 @@ const EXPECTED_COLUMNS = [
   'CIDADE',
 ];
 
+interface KmImportRow {
+  login_tecnico: string;
+  recurso: string;
+  data: string;
+  trecho: string;
+  endereco_destino: string;
+  distancia_km: number;
+  frente: string;
+  cidade: string;
+  coord_origem_x: number | null;
+  coord_origem_y: number | null;
+  coord_destino_x: number | null;
+  coord_destino_y: number | null;
+}
+
+type ExcelCell = string | number | boolean | null | undefined;
+type ExcelRow = Record<string, ExcelCell>;
+
 function findColumn(headers: string[], ...candidates: string[]): string | null {
   for (const c of candidates) {
     const found = headers.find(h => h.toUpperCase().trim() === c);
@@ -31,7 +49,7 @@ function findColumn(headers: string[], ...candidates: string[]): string | null {
   return null;
 }
 
-function parseDecimal(val: any): number {
+function parseDecimal(val: unknown): number {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') return val;
   const str = String(val).trim().replace(/\s/g, '');
@@ -41,19 +59,31 @@ function parseDecimal(val: any): number {
   return isNaN(num) ? 0 : num;
 }
 
-function parseDate(val: any): string {
+function parseDate(val: unknown): string {
   if (!val) return new Date().toISOString().split('T')[0];
   if (typeof val === 'number') {
     const d = XLSX.SSF.parse_date_code(val);
     return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
   }
   const str = String(val).trim();
-  const parts = str.split(/[\/\-]/);
+  const parts = str.split(/[/-]/);
   if (parts.length === 3) {
     if (parts[0].length === 4) return parts.join('-');
     return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
   }
   return str;
+}
+
+function rowKey(row: Pick<KmImportRow, 'login_tecnico' | 'data' | 'trecho' | 'endereco_destino' | 'distancia_km' | 'frente' | 'cidade'>): string {
+  return [
+    row.cidade,
+    row.login_tecnico.toUpperCase(),
+    row.data,
+    row.trecho.trim().toUpperCase(),
+    row.endereco_destino.trim().toUpperCase(),
+    String(row.distancia_km),
+    row.frente.trim().toUpperCase(),
+  ].join('|');
 }
 
 const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onImportComplete }) => {
@@ -70,10 +100,16 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
     setResult(null);
 
     try {
+      if (!selectedCity) {
+        setResult({ success: 0, errors: ['Selecione uma cidade antes de importar.'], skipped: 0 });
+        setLoading(false);
+        return;
+      }
+
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
+      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(ws);
 
       if (jsonData.length === 0) {
         setResult({ success: 0, errors: ['Arquivo vazio.'], skipped: 0 });
@@ -101,17 +137,25 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
         setLoading(false);
         return;
       }
+      if (!colData || !colDistancia) {
+        setResult({ success: 0, errors: ['Colunas obrigatórias não encontradas: DATA e DISTÂNCIA/KM.'], skipped: 0 });
+        setLoading(false);
+        return;
+      }
 
-      let success = 0;
       let skipped = 0;
       const errors: string[] = [];
-      const rows: any[] = [];
+      const rows: KmImportRow[] = [];
 
       for (const row of jsonData) {
         const login = String(row[colLogin!] || '').trim();
         if (!login) { skipped++; continue; }
 
         const cidade = colCidade ? String(row[colCidade] || '').trim().toUpperCase() : selectedCity;
+        if (cidade && cidade !== selectedCity) {
+          skipped++;
+          continue;
+        }
 
         rows.push({
           login_tecnico: login.toUpperCase(),
@@ -127,22 +171,56 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
           coord_destino_x: colCoordDestinoX ? parseDecimal(row[colCoordDestinoX]) || null : null,
           coord_destino_y: colCoordDestinoY ? parseDecimal(row[colCoordDestinoY]) || null : null,
         });
-        success++;
       }
 
-      // Insert in batches of 500
-      for (let i = 0; i < rows.length; i += 500) {
-        const batch = rows.slice(i, i + 500);
-        const { error } = await supabase.from('km_tecnica').insert(batch as any);
-        if (error) {
-          errors.push(`Erro ao salvar lote ${Math.floor(i / 500) + 1}: ${error.message}`);
+      const seen = new Set<string>();
+      const uniqueRows = rows.filter((row) => {
+        const key = rowKey(row);
+        if (seen.has(key)) {
+          skipped++;
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+
+      const datas = [...new Set(uniqueRows.map((row) => row.data))];
+      let rowsToInsert = uniqueRows;
+      if (datas.length > 0) {
+        const { data: existingRows, error: existingError } = await supabase
+          .from('km_tecnica')
+          .select('login_tecnico,data,trecho,endereco_destino,distancia_km,frente,cidade')
+          .eq('cidade', selectedCity)
+          .in('data', datas);
+
+        if (existingError) {
+          errors.push(`Erro ao verificar registros existentes: ${existingError.message}`);
+        } else {
+          const existingKeys = new Set(((existingRows as KmImportRow[] | null) ?? []).map(rowKey));
+          rowsToInsert = uniqueRows.filter((row) => {
+            const alreadyExists = existingKeys.has(rowKey(row));
+            if (alreadyExists) skipped++;
+            return !alreadyExists;
+          });
         }
       }
 
-      setResult({ success, errors: errors.slice(0, 20), skipped });
-      if (success > 0 && errors.length === 0) onImportComplete();
-    } catch (err: any) {
-      setResult({ success: 0, errors: [err.message || 'Erro ao processar arquivo.'], skipped: 0 });
+      // Insert in batches of 500
+      let inserted = 0;
+      for (let i = 0; i < rowsToInsert.length; i += 500) {
+        const batch = rowsToInsert.slice(i, i + 500);
+        const { error } = await supabase.from('km_tecnica').insert(batch);
+        if (error) {
+          errors.push(`Erro ao salvar lote ${Math.floor(i / 500) + 1}: ${error.message}`);
+        } else {
+          inserted += batch.length;
+        }
+      }
+
+      setResult({ success: inserted, errors: errors.slice(0, 20), skipped });
+      if (inserted > 0 && errors.length === 0) onImportComplete();
+    } catch (err: unknown) {
+      setResult({ success: 0, errors: [err instanceof Error ? err.message : 'Erro ao processar arquivo.'], skipped: 0 });
     }
 
     setLoading(false);

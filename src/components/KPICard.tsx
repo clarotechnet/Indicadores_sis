@@ -1,6 +1,8 @@
 import React from 'react';
+import { BarChart3, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react';
+
 import { Card, CardContent } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, Users, BarChart3, type LucideIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface KPICardProps {
   title: string;
@@ -12,30 +14,58 @@ interface KPICardProps {
 }
 
 const colorMap = {
-  primary: 'text-primary bg-primary/10',
-  success: 'text-success bg-success/10',
-  warning: 'text-warning bg-warning/10',
-  destructive: 'text-destructive bg-destructive/10',
+  primary: {
+    border: 'border-l-primary',
+    icon: 'bg-primary/10 text-primary',
+    value: 'text-foreground',
+  },
+  success: {
+    border: 'border-l-success',
+    icon: 'bg-success/10 text-success',
+    value: 'text-success',
+  },
+  warning: {
+    border: 'border-l-warning',
+    icon: 'bg-warning/10 text-warning',
+    value: 'text-warning',
+  },
+  destructive: {
+    border: 'border-l-destructive',
+    icon: 'bg-destructive/10 text-destructive',
+    value: 'text-destructive',
+  },
 };
 
-const KPICard: React.FC<KPICardProps> = ({ title, value, subtitle, icon: Icon = BarChart3, trend, color = 'primary' }) => {
+const KPICard: React.FC<KPICardProps> = ({
+  title,
+  value,
+  subtitle,
+  icon: Icon = BarChart3,
+  trend,
+  color = 'primary',
+}) => {
+  const colors = colorMap[color];
+
   return (
-    <Card className="shadow-sm hover:shadow-md transition-shadow">
-      <CardContent className="p-3 sm:p-5">
-        <div className="flex items-start justify-between">
-          <div className="space-y-0.5 sm:space-y-1 min-w-0 flex-1">
-            <p className="text-xs sm:text-sm text-muted-foreground truncate">{title}</p>
-            <p className="text-lg sm:text-2xl font-display font-bold text-foreground truncate">{value}</p>
+    <Card className={cn('overflow-hidden border-l-4 shadow-sm transition-colors hover:border-primary/40', colors.border)}>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold uppercase text-muted-foreground">{title}</p>
+            <p className={cn('mt-1 truncate font-display text-xl font-bold leading-tight sm:text-2xl', colors.value)}>
+              {value}
+            </p>
             {subtitle && (
-              <p className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1">
-                {trend === 'up' && <TrendingUp className="h-3 w-3 text-success shrink-0" />}
-                {trend === 'down' && <TrendingDown className="h-3 w-3 text-destructive shrink-0" />}
+              <p className="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                {trend === 'up' && <TrendingUp className="size-3.5 shrink-0 text-success" />}
+                {trend === 'down' && <TrendingDown className="size-3.5 shrink-0 text-destructive" />}
                 <span className="truncate">{subtitle}</span>
               </p>
             )}
           </div>
-          <div className={`p-2 sm:p-2.5 rounded-lg ${colorMap[color]} shrink-0 ml-2`}>
-            <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+
+          <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', colors.icon)}>
+            <Icon className="size-5" />
           </div>
         </div>
       </CardContent>

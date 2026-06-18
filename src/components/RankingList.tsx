@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Trophy, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Trophy } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface RankingItem {
   nome: string;
@@ -17,7 +18,7 @@ interface RankingListProps {
 
 const RankingList: React.FC<RankingListProps> = ({ title, items, type, suffix = '%', invertido = false }) => {
   const Icon = type === 'best' ? Trophy : AlertTriangle;
-  const iconColor = type === 'best' ? 'text-success' : 'text-destructive';
+  const isBest = type === 'best';
 
   const getBarWidth = (valor: number) => {
     if (invertido) {
@@ -29,36 +30,35 @@ const RankingList: React.FC<RankingListProps> = ({ title, items, type, suffix = 
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${iconColor}`} />
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <span className={cn('flex size-7 items-center justify-center rounded-md', isBest ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive')}>
+            <Icon className="size-4" />
+          </span>
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="flex flex-col gap-2">
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">Sem dados</p>
         ) : (
           items.map((item, i) => (
-            <div key={i} className="flex items-center gap-2 sm:gap-3">
-              <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${
-                type === 'best' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
-              }`}>
+            <div key={`${item.nome}-${i}`} className="flex items-center gap-3 rounded-md border border-transparent px-2 py-2 transition-colors hover:border-border hover:bg-muted/40">
+              <span className={cn(
+                'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                isBest ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive',
+              )}>
                 {i + 1}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
-                  <span className="text-xs sm:text-sm truncate text-foreground">{item.nome}</span>
-                  <span className={`text-xs sm:text-sm font-semibold shrink-0 ${
-                    type === 'best' ? 'text-success' : 'text-destructive'
-                  }`}>
+                  <span className="truncate text-sm font-medium text-foreground">{item.nome}</span>
+                  <span className={cn('shrink-0 text-sm font-semibold', isBest ? 'text-success' : 'text-destructive')}>
                     {item.valor.toFixed(1)}{suffix}
                   </span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-1.5 mt-1">
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className={`h-1.5 rounded-full transition-all ${
-                      type === 'best' ? 'bg-success' : 'bg-destructive'
-                    }`}
+                    className={cn('h-full rounded-full transition-all', isBest ? 'bg-success' : 'bg-destructive')}
                     style={{ width: `${getBarWidth(item.valor)}%` }}
                   />
                 </div>
