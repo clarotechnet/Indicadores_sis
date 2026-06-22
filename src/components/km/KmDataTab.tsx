@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Database } from 'lucide-react';
+import { isKmServiceOrder } from '@/lib/kmMetrics';
 import type { KmTecnica } from '@/types/database';
 
 interface KmDataTabProps {
@@ -34,9 +35,12 @@ const KmDataTab: React.FC<KmDataTabProps> = ({ data, transporteMap }) => {
         transporte: '',
         litros: 0,
       };
+      const isServiceOrder = isKmServiceOrder(d);
       existing.kmTotal += d.distancia_km || 0;
-      existing.osTotal += 1;
-      if (d.endereco_destino) existing.pontosGps += 1;
+      if (isServiceOrder) {
+        existing.osTotal += 1;
+        existing.pontosGps += 1;
+      }
       map.set(d.login_tecnico, existing);
     });
     return Array.from(map.values())

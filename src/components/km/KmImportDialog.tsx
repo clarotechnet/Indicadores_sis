@@ -4,6 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { useCity } from '@/contexts/CityContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { notifyImportCompleted } from '@/lib/notifications';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 interface KmImportDialogProps {
@@ -88,6 +90,7 @@ function rowKey(row: Pick<KmImportRow, 'login_tecnico' | 'data' | 'trecho' | 'en
 
 const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onImportComplete }) => {
   const { selectedCity } = useCity();
+  const { profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: number; errors: string[]; skipped: number } | null>(null);
@@ -218,7 +221,17 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
       }
 
       setResult({ success: inserted, errors: errors.slice(0, 20), skipped });
-      if (inserted > 0 && errors.length === 0) onImportComplete();
+      if (inserted > 0 && errors.length === 0) {
+        await notifyImportCompleted({
+          profile,
+          cidade: selectedCity,
+          origem: 'KM Rotas',
+          total: inserted,
+          skipped,
+          fileName: file.name,
+        });
+        onImportComplete();
+      }
     } catch (err: unknown) {
       setResult({ success: 0, errors: [err instanceof Error ? err.message : 'Erro ao processar arquivo.'], skipped: 0 });
     }

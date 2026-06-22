@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { CityProvider } from "@/contexts/CityContext";
+import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import Login from "./pages/Login";
 import Cadastro from "./pages/Cadastro";
 import SelecionarCidade from "./pages/SelecionarCidade";
@@ -14,6 +15,7 @@ import Dashboard from "./pages/Dashboard";
 import KmRotas from "./pages/KmRotas";
 import ExcessoMiscelaneas from "./pages/ExcessoMiscelaneas";
 import Admin from "./pages/Admin";
+import Perfil from "./pages/Perfil";
 import NotFound from "./pages/NotFound";
 import React from "react";
 import { Loader2, LogOut, ShieldAlert } from "lucide-react";
@@ -87,18 +89,21 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <CityProvider>
-            <Routes>
-              <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/cadastro" element={<PublicRoute><Cadastro /></PublicRoute>} />
-              <Route path="/selecionar-cidade" element={<ProtectedRoute><SelecionarCidade /></ProtectedRoute>} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/km-rotas" element={<ProtectedRoute><KmRotas /></ProtectedRoute>} />
-              <Route path="/excesso-miscelaneas" element={<ProtectedRoute><ExcessoMiscelaneas /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <NotificationsProvider>
+              <Routes>
+                <Route path="/" element={<Navigate to="/login" replace />} />
+                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/cadastro" element={<PublicRoute><Cadastro /></PublicRoute>} />
+                <Route path="/selecionar-cidade" element={<ProtectedRoute><SelecionarCidade /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/km-rotas" element={<ProtectedRoute><KmRotas /></ProtectedRoute>} />
+                <Route path="/excesso-miscelaneas" element={<ProtectedRoute><ExcessoMiscelaneas /></ProtectedRoute>} />
+                <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </NotificationsProvider>
           </CityProvider>
         </AuthProvider>
       </BrowserRouter>

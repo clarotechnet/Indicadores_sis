@@ -224,7 +224,7 @@ const Admin = () => {
   return (
     <div className="min-h-screen bg-background">
       <DashboardHeader />
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="dashboard-container flex flex-col gap-4 sm:gap-5">
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4" />

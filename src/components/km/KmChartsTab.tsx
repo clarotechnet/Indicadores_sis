@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Line, Legend, LabelList } from 'recharts';
 import { TrendingUp, Users, Route, ClipboardCheck } from 'lucide-react';
 import KPICard from '@/components/KPICard';
+import { isKmServiceOrder } from '@/lib/kmMetrics';
 import type { KmTecnica } from '@/types/database';
 
 interface KmChartsTabProps {
@@ -13,7 +14,8 @@ interface KmChartsTabProps {
 
 const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap, hasActiveFilters = false }) => {
   const totalKm = useMemo(() => data.reduce((s, d) => s + (d.distancia_km || 0), 0), [data]);
-  const totalOS = data.length;
+  const serviceRows = useMemo(() => data.filter(isKmServiceOrder), [data]);
+  const totalOS = serviceRows.length;
   const mediaKmOS = totalOS > 0 ? totalKm / totalOS : 0;
   const totalTecnicos = useMemo(() => new Set(data.map(d => d.login_tecnico)).size, [data]);
 
@@ -23,7 +25,7 @@ const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap, hasActiv
     data.forEach(d => {
       const existing = map.get(d.login_tecnico) || { nome: d.recurso, km: 0, os: 0 };
       existing.km += d.distancia_km || 0;
-      existing.os += 1;
+      if (isKmServiceOrder(d)) existing.os += 1;
       map.set(d.login_tecnico, existing);
     });
     return Array.from(map.values())
@@ -63,14 +65,14 @@ const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap, hasActiv
   // OS por frente
   const osPorFrente = useMemo(() => {
     const map = new Map<string, number>();
-    data.forEach(d => {
+    serviceRows.forEach(d => {
       const frente = d.frente || 'SEM FRENTE';
       map.set(frente, (map.get(frente) || 0) + 1);
     });
     return Array.from(map.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([frente, count]) => ({ frente: frente.length > 15 ? frente.substring(0, 15) + '...' : frente, os: count }));
-  }, [data]);
+  }, [serviceRows]);
 
   return (
     <div className="space-y-4">

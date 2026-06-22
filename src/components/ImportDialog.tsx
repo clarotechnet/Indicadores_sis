@@ -4,6 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { useCity } from '@/contexts/CityContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { notifyImportCompleted } from '@/lib/notifications';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import type { DadoTecnico, HorarioEntradaTecnico, HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
 
@@ -46,6 +48,7 @@ const horaEntradaKeyOf = (row: { data: string; login_tecnico: string; cidade: st
 
 const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImportComplete }) => {
   const { selectedCity } = useCity();
+  const { profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: number; errors: string[]; skipped: number } | null>(null);
@@ -320,7 +323,17 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
       }
 
       setResult({ success, errors: errors.slice(0, 20), skipped });
-      if (success > 0) onImportComplete();
+      if (success > 0) {
+        await notifyImportCompleted({
+          profile,
+          cidade: selectedCity,
+          origem: 'Indicadores',
+          total: success,
+          skipped,
+          fileName: file.name,
+        });
+        onImportComplete();
+      }
     } catch (err: unknown) {
       setResult({ success: 0, errors: [err instanceof Error ? err.message : 'Erro ao processar arquivo.'], skipped: 0 });
     }

@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import ComparativoHroTab from '@/components/ComparativoHroTab';
 import DashboardFilters, { type DashboardFilterState } from '@/components/DashboardFilters';
 import DashboardHeader from '@/components/DashboardHeader';
+import DashboardLoadingState from '@/components/DashboardLoadingState';
 import HorarioTab from '@/components/HorarioTab';
 import ImportDialog from '@/components/ImportDialog';
 import IndicatorTab from '@/components/IndicatorTab';
@@ -20,6 +21,8 @@ import type { HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/t
 import { INDICADOR_LABELS } from '@/types/database';
 
 const INDICATOR_KEYS: IndicadorKey[] = ['nr35', 'tnps', 'inspecao_e', 'revisita', 'os_dig', 'geo', 'ura', 'tec1', 'bds'];
+const TAB_TRIGGER_CLASS =
+  'whitespace-nowrap rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none sm:text-sm';
 
 const getStoredTab = (): string => {
   try {
@@ -37,6 +40,7 @@ const Dashboard = () => {
   const [allHorarios, setAllHorarios] = useState<HorarioPrimeiroCliente[]>([]);
   const [latestDate, setLatestDate] = useState<string>('');
   const [loadError, setLoadError] = useState<string>('');
+  const [loadingData, setLoadingData] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(getStoredTab);
   const [filters, setFilters] = useState<DashboardFilterState>({
@@ -48,8 +52,12 @@ const Dashboard = () => {
   });
 
   const fetchData = async () => {
-    if (!selectedCity) return;
+    if (!selectedCity) {
+      setLoadingData(false);
+      return;
+    }
     setLoadError('');
+    setLoadingData(true);
 
     const fetchAll = async <T,>(table: 'indicadores_tecnicos' | 'horario_primeiro_cliente'): Promise<T[]> => {
       const PAGE = 1000;
@@ -101,6 +109,8 @@ const Dashboard = () => {
       setAllHorarios([]);
       setLatestDate('');
       setLoadError(error instanceof Error ? error.message : 'Erro ao carregar dados do dashboard.');
+    } finally {
+      setLoadingData(false);
     }
   };
 
@@ -223,7 +233,7 @@ const Dashboard = () => {
           </Alert>
         )}
 
-        {latestDate && (
+        {!loadingData && latestDate && (
           <div className="dashboard-panel flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
             <CalendarDays className="size-4 text-primary" />
             <span className="font-semibold text-foreground">Último envio no banco</span>
@@ -254,51 +264,58 @@ const Dashboard = () => {
           onImport={() => setImportOpen(true)}
         />
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <div className="overflow-x-auto pb-1">
-            <TabsList className="inline-flex h-auto w-max gap-1 border border-border bg-card p-1 sm:flex sm:w-full sm:flex-wrap sm:justify-start">
-              <TabsTrigger value="resumo" className="whitespace-nowrap text-xs sm:text-sm">
-                Resumo
-              </TabsTrigger>
-              {INDICATOR_KEYS.map((key) => (
-                <TabsTrigger key={key} value={key} className="whitespace-nowrap text-xs sm:text-sm">
-                  {INDICADOR_LABELS[key]}
+        {loadingData ? (
+          <DashboardLoadingState
+            title="Carregando indicadores"
+            description="Buscando os dados da cidade selecionada antes de atualizar os cards e graficos."
+          />
+        ) : (
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+            <div className="overflow-x-auto pb-1">
+              <TabsList className="inline-flex h-auto w-max justify-start gap-3 rounded-none border-b border-border bg-transparent p-0 sm:flex sm:w-full sm:flex-wrap">
+                <TabsTrigger value="resumo" className={TAB_TRIGGER_CLASS}>
+                  Visão Geral
                 </TabsTrigger>
-              ))}
-              <TabsTrigger value="horario" className="whitespace-nowrap text-xs sm:text-sm">
-                Horário
-              </TabsTrigger>
-              <TabsTrigger value="comparativo_hro" className="whitespace-nowrap text-xs sm:text-sm">
-                Comparativo HRO
-              </TabsTrigger>
-              <TabsTrigger value="supervisor" className="whitespace-nowrap text-xs sm:text-sm">
-                Supervisor
-              </TabsTrigger>
-            </TabsList>
-          </div>
+                {INDICATOR_KEYS.map((key) => (
+                  <TabsTrigger key={key} value={key} className={TAB_TRIGGER_CLASS}>
+                    {INDICADOR_LABELS[key]}
+                  </TabsTrigger>
+                ))}
+                <TabsTrigger value="horario" className={TAB_TRIGGER_CLASS}>
+                  Horário
+                </TabsTrigger>
+                <TabsTrigger value="comparativo_hro" className={TAB_TRIGGER_CLASS}>
+                  Comparativo HRO
+                </TabsTrigger>
+                <TabsTrigger value="supervisor" className={TAB_TRIGGER_CLASS}>
+                  Supervisor
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-          <TabsContent value="resumo" className="mt-4">
-            <ResumoTab data={filteredData} cidade={selectedCity || ''} isDateFiltered={isDateFiltered} />
-          </TabsContent>
-
-          {INDICATOR_KEYS.map((key) => (
-            <TabsContent key={key} value={key} className="mt-4">
-              <IndicatorTab data={filteredData} indicatorKey={key} label={INDICADOR_LABELS[key]} isDateFiltered={isDateFiltered} />
+            <TabsContent value="resumo" className="mt-4">
+              <ResumoTab data={filteredData} cidade={selectedCity || ''} isDateFiltered={isDateFiltered} />
             </TabsContent>
-          ))}
 
-          <TabsContent value="horario" className="mt-4">
-            <HorarioTab data={filteredHorarios} isDateFiltered={isDateFiltered} />
-          </TabsContent>
+            {INDICATOR_KEYS.map((key) => (
+              <TabsContent key={key} value={key} className="mt-4">
+                <IndicatorTab data={filteredData} indicatorKey={key} label={INDICADOR_LABELS[key]} isDateFiltered={isDateFiltered} />
+              </TabsContent>
+            ))}
 
-          <TabsContent value="comparativo_hro" className="mt-4">
-            <ComparativoHroTab horarioData={filteredHorarios} />
-          </TabsContent>
+            <TabsContent value="horario" className="mt-4">
+              <HorarioTab data={filteredHorarios} isDateFiltered={isDateFiltered} />
+            </TabsContent>
 
-          <TabsContent value="supervisor" className="mt-4">
-            <SupervisorTab data={filteredData} isDateFiltered={isDateFiltered} />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="comparativo_hro" className="mt-4">
+              <ComparativoHroTab horarioData={filteredHorarios} />
+            </TabsContent>
+
+            <TabsContent value="supervisor" className="mt-4">
+              <SupervisorTab data={filteredData} isDateFiltered={isDateFiltered} />
+            </TabsContent>
+          </Tabs>
+        )}
       </main>
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImportComplete={fetchData} />

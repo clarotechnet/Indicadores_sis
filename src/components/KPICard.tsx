@@ -15,24 +15,16 @@ interface KPICardProps {
 
 const colorMap = {
   primary: {
-    border: 'border-l-primary',
     icon: 'bg-primary/10 text-primary',
-    value: 'text-foreground',
   },
   success: {
-    border: 'border-l-success',
     icon: 'bg-success/10 text-success',
-    value: 'text-success',
   },
   warning: {
-    border: 'border-l-warning',
     icon: 'bg-warning/10 text-warning',
-    value: 'text-warning',
   },
   destructive: {
-    border: 'border-l-destructive',
     icon: 'bg-destructive/10 text-destructive',
-    value: 'text-destructive',
   },
 };
 
@@ -47,25 +39,26 @@ const KPICard: React.FC<KPICardProps> = ({
   const colors = colorMap[color];
 
   return (
-    <Card className={cn('overflow-hidden border-l-4 shadow-sm transition-colors hover:border-primary/40', colors.border)}>
+    <Card className="overflow-hidden shadow-sm transition-colors hover:border-primary/30">
       <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold uppercase text-muted-foreground">{title}</p>
-            <p className={cn('mt-1 truncate font-display text-xl font-bold leading-tight sm:text-2xl', colors.value)}>
-              {value}
-            </p>
-            {subtitle && (
-              <p className="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                {trend === 'up' && <TrendingUp className="size-3.5 shrink-0 text-success" />}
-                {trend === 'down' && <TrendingDown className="size-3.5 shrink-0 text-destructive" />}
-                <span className="truncate">{subtitle}</span>
-              </p>
-            )}
+        <div className="relative min-h-[104px]">
+          <div className="min-w-0 pr-11">
+            <p className="text-sm font-semibold leading-tight text-foreground">{title}</p>
           </div>
 
-          <div className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', colors.icon)}>
+          <div className={cn('absolute right-0 top-0 flex size-10 items-center justify-center rounded-lg', colors.icon)}>
             <Icon className="size-5" />
+          </div>
+
+          <div className="mt-3 min-w-0">
+            <p className="font-display text-2xl font-bold leading-none text-foreground sm:text-[1.7rem]">{value}</p>
+            {subtitle && (
+              <p className="mt-3 flex min-w-0 items-start gap-1.5 text-xs leading-snug text-muted-foreground">
+                {trend === 'up' && <TrendingUp className="size-3.5 shrink-0 text-success" />}
+                {trend === 'down' && <TrendingDown className="size-3.5 shrink-0 text-destructive" />}
+                <span>{subtitle}</span>
+              </p>
+            )}
           </div>
         </div>
       </CardContent>

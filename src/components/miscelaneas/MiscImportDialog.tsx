@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { notifyImportCompleted } from '@/lib/notifications';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { Upload, Loader2 } from 'lucide-react';
@@ -111,6 +113,7 @@ const miscRowKey = (row: Pick<MiscImportRow, 'cidade' | 'data_execucao' | 'numer
   ].join('|');
 
 const MiscImportDialog: React.FC<Props> = ({ open, onOpenChange, onImportComplete, cidade }) => {
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -222,6 +225,14 @@ const MiscImportDialog: React.FC<Props> = ({ open, onOpenChange, onImportComplet
         inserted += batch.length;
       }
 
+      await notifyImportCompleted({
+        profile,
+        cidade,
+        origem: 'Miscelâneas',
+        total: inserted,
+        skipped,
+        fileName: file.name,
+      });
       toast.success(`${inserted} registros importados com sucesso!${skipped > 0 ? ` ${skipped} ignorados.` : ''}`);
       onImportComplete();
       onOpenChange(false);

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck, Fuel, Route, ShieldAlert } from 'lucide-react';
+import { AlertCircle, ClipboardCheck, Fuel, Route, ShieldAlert } from 'lucide-react';
 
 import DashboardHeader from '@/components/DashboardHeader';
+import DashboardLoadingState from '@/components/DashboardLoadingState';
 import KPICard from '@/components/KPICard';
 import KmChartsTab from '@/components/km/KmChartsTab';
 import KmDataTab from '@/components/km/KmDataTab';
@@ -10,9 +11,11 @@ import KmFilters, { type KmFilterState } from '@/components/km/KmFilters';
 import KmImportDialog from '@/components/km/KmImportDialog';
 import KmManualDialog from '@/components/km/KmManualDialog';
 import KmMapTab from '@/components/km/KmMapTab';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
+import { isKmServiceOrder } from '@/lib/kmMetrics';
 import { supabase } from '@/lib/supabase';
 import type { DadoTecnico, KmTecnica, TransporteTecnico } from '@/types/database';
 
@@ -27,6 +30,8 @@ const KmRotas = () => {
   const [dadosTecnicos, setDadosTecnicos] = useState<DadoTecnico[]>([]);
   const [manualOpen, setManualOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('graficos');
+  const [loadingData, setLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [filters, setFilters] = useState<KmFilterState>({
     dataInicial: '',
     dataFinal: '',
@@ -35,8 +40,8 @@ const KmRotas = () => {
     supervisores: [],
   });
 
-  const fetchData = async () => {
-    if (!selectedCity) return;
+  const fetchKmData = async (): Promise<KmTecnica[]> => {
+    if (!selectedCity) return [];
 
     let allRows: KmTecnica[] = [];
     let from = 0;
@@ -44,11 +49,15 @@ const KmRotas = () => {
     let keepFetching = true;
 
     while (keepFetching) {
-      const { data: rows } = await supabase
+      const { data: rows, error } = await supabase
         .from('km_tecnica')
         .select('*')
         .eq('cidade', selectedCity)
         .range(from, from + pageSize - 1);
+
+      if (error) {
+        throw new Error(`Erro ao buscar km_tecnica: ${error.message}`);
+      }
 
       const fetched = (rows as KmTecnica[]) || [];
       allRows = [...allRows, ...fetched];
@@ -60,23 +69,61 @@ const KmRotas = () => {
       }
     }
 
-    setData(allRows);
+    return allRows;
   };
 
-  const fetchTransportes = async () => {
-    const { data: rows } = await supabase.from('transporte_tecnico').select('*');
-    setTransportes((rows as TransporteTecnico[]) || []);
+  const fetchTransportes = async (): Promise<TransporteTecnico[]> => {
+    const { data: rows, error } = await supabase.from('transporte_tecnico').select('*');
+
+    if (error) {
+      throw new Error(`Erro ao buscar transporte_tecnico: ${error.message}`);
+    }
+
+    return (rows as TransporteTecnico[]) || [];
   };
 
-  const fetchDadosTecnicos = async () => {
-    if (!selectedCity) return;
+  const fetchDadosTecnicos = async (): Promise<DadoTecnico[]> => {
+    if (!selectedCity) return [];
 
-    const { data: rows } = await supabase
+    const { data: rows, error } = await supabase
       .from('dados_tecnicos')
       .select('*')
       .eq('cidade', selectedCity);
 
-    setDadosTecnicos((rows as DadoTecnico[]) || []);
+    if (error) {
+      throw new Error(`Erro ao buscar dados_tecnicos: ${error.message}`);
+    }
+
+    return (rows as DadoTecnico[]) || [];
+  };
+
+  const loadData = async () => {
+    if (!selectedCity) {
+      setLoadingData(false);
+      return;
+    }
+
+    setLoadError('');
+    setLoadingData(true);
+
+    try {
+      const [kmRows, transporteRows, tecnicoRows] = await Promise.all([
+        fetchKmData(),
+        fetchTransportes(),
+        fetchDadosTecnicos(),
+      ]);
+
+      setData(kmRows);
+      setTransportes(transporteRows);
+      setDadosTecnicos(tecnicoRows);
+    } catch (error) {
+      setData([]);
+      setTransportes([]);
+      setDadosTecnicos([]);
+      setLoadError(error instanceof Error ? error.message : 'Erro ao carregar dados de KM.');
+    } finally {
+      setLoadingData(false);
+    }
   };
 
   useEffect(() => {
@@ -85,9 +132,7 @@ const KmRotas = () => {
       return;
     }
 
-    fetchData();
-    fetchTransportes();
-    fetchDadosTecnicos();
+    loadData();
   }, [selectedCity]);
 
   const transporteMap = useMemo(() => {
@@ -131,7 +176,7 @@ const KmRotas = () => {
   }, [data, supervisorMap]);
 
   const totalKm = useMemo(() => filteredData.reduce((s, d) => s + (d.distancia_km || 0), 0), [filteredData]);
-  const totalOS = filteredData.length;
+  const totalOS = useMemo(() => filteredData.filter(isKmServiceOrder).length, [filteredData]);
   const litrosEstimado = useMemo(() => {
     return filteredData.reduce((total, d) => {
       const km = d.distancia_km || 0;
@@ -183,33 +228,50 @@ const KmRotas = () => {
           onManualAdd={() => setManualOpen(true)}
         />
 
-        <div className="grid grid-cols-1 dashboard-grid-gap sm:grid-cols-3">
-          <KPICard title="Qtd. de OS" value={String(totalOS)} icon={ClipboardCheck} color="primary" />
-          <KPICard title="KM total" value={`${totalKm.toFixed(1)} km`} icon={Route} color="success" />
-          <KPICard title="Litros estimados" value={`${litrosEstimado.toFixed(1)} L`} icon={Fuel} color="warning" />
-        </div>
+        {loadError && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="h-auto w-full justify-start gap-1 border border-border bg-card p-1 sm:w-auto">
-            <TabsTrigger value="graficos" className="text-xs sm:text-sm">Gráficos</TabsTrigger>
-            <TabsTrigger value="mapa" className="text-xs sm:text-sm">Mapa</TabsTrigger>
-            <TabsTrigger value="dados" className="text-xs sm:text-sm">Dados detalhados</TabsTrigger>
-          </TabsList>
+        {loadingData ? (
+          <DashboardLoadingState
+            cards={3}
+            title="Carregando KM e rotas"
+            description="Buscando rotas, transportes e dados tecnicos antes de recalcular os totais."
+          />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 dashboard-grid-gap sm:grid-cols-3">
+              <KPICard title="Qtd. de OS" value={String(totalOS)} icon={ClipboardCheck} color="primary" />
+              <KPICard title="KM total" value={`${totalKm.toFixed(1)} km`} icon={Route} color="success" />
+              <KPICard title="Litros estimados" value={`${litrosEstimado.toFixed(1)} L`} icon={Fuel} color="warning" />
+            </div>
 
-          <TabsContent value="graficos" className="mt-4">
-            <KmChartsTab data={filteredData} transporteMap={transporteMap} hasActiveFilters={hasActiveFilters} />
-          </TabsContent>
-          <TabsContent value="mapa" className="mt-4">
-            <KmMapTab data={filteredData} selectedTecnicos={filters.tecnicos} />
-          </TabsContent>
-          <TabsContent value="dados" className="mt-4">
-            <KmDataTab data={filteredData} transporteMap={transporteMap} />
-          </TabsContent>
-        </Tabs>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="h-auto w-full justify-start gap-1 border border-border bg-card p-1 sm:w-auto">
+                <TabsTrigger value="graficos" className="text-xs sm:text-sm">Gráficos</TabsTrigger>
+                <TabsTrigger value="mapa" className="text-xs sm:text-sm">Mapa</TabsTrigger>
+                <TabsTrigger value="dados" className="text-xs sm:text-sm">Dados detalhados</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="graficos" className="mt-4">
+                <KmChartsTab data={filteredData} transporteMap={transporteMap} hasActiveFilters={hasActiveFilters} />
+              </TabsContent>
+              <TabsContent value="mapa" className="mt-4">
+                <KmMapTab data={filteredData} selectedTecnicos={filters.tecnicos} />
+              </TabsContent>
+              <TabsContent value="dados" className="mt-4">
+                <KmDataTab data={filteredData} transporteMap={transporteMap} />
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
       </main>
 
-      <KmImportDialog open={importOpen} onOpenChange={setImportOpen} onImportComplete={fetchData} />
-      <KmManualDialog open={manualOpen} onOpenChange={setManualOpen} onComplete={fetchData} />
+      <KmImportDialog open={importOpen} onOpenChange={setImportOpen} onImportComplete={loadData} />
+      <KmManualDialog open={manualOpen} onOpenChange={setManualOpen} onComplete={loadData} />
     </div>
   );
 };
