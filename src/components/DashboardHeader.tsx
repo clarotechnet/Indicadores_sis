@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
+  BadgeDollarSign,
   Bell,
   Building2,
   LayoutDashboard,
@@ -25,6 +26,7 @@ const navItems = [
   { path: '/dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: ['admin', 'user', 'tecnico'] as UserRole[] },
   { path: '/km-rotas', label: 'KM Rotas', icon: Route, roles: ['admin', 'tecnico'] as UserRole[] },
   { path: '/excesso-miscelaneas', label: 'Miscelâneas', icon: PackageOpen, roles: ['admin'] as UserRole[] },
+  { path: '/comissao-gatilho', label: 'Comissão', icon: BadgeDollarSign, roles: ['admin'] as UserRole[] },
 ];
 
 const DashboardHeader: React.FC = () => {

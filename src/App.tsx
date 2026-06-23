@@ -14,6 +14,7 @@ import SelecionarCidade from "./pages/SelecionarCidade";
 import Dashboard from "./pages/Dashboard";
 import KmRotas from "./pages/KmRotas";
 import ExcessoMiscelaneas from "./pages/ExcessoMiscelaneas";
+import ComissaoGatilho from "./pages/ComissaoGatilho";
 import Admin from "./pages/Admin";
 import Perfil from "./pages/Perfil";
 import NotFound from "./pages/NotFound";
@@ -99,6 +100,7 @@ const App = () => (
                 <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                 <Route path="/km-rotas" element={<ProtectedRoute><KmRotas /></ProtectedRoute>} />
                 <Route path="/excesso-miscelaneas" element={<ProtectedRoute><ExcessoMiscelaneas /></ProtectedRoute>} />
+                <Route path="/comissao-gatilho" element={<ProtectedRoute><ComissaoGatilho /></ProtectedRoute>} />
                 <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
                 <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
                 <Route path="*" element={<NotFound />} />

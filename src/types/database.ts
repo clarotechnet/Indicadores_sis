@@ -190,6 +190,26 @@ export type ExcessoMiscelanea = {
   created_at: string;
 };
 
+export type ComissaoTecnico = {
+  id: string;
+  id_instalador: number;
+  tecnico: string;
+  login: string;
+  cidade: Cidade;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ComissaoServico = {
+  id: string;
+  id_comissionamento: number;
+  produto: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -251,6 +271,25 @@ export type Database = {
         Row: ExcessoMiscelanea;
         Insert: Omit<ExcessoMiscelanea, 'id' | 'created_at'>;
         Update: Partial<Omit<ExcessoMiscelanea, 'id' | 'created_at'>>;
+        Relationships: [];
+      };
+      comissao_tecnicos: {
+        Row: ComissaoTecnico;
+        Insert: Partial<Pick<ComissaoTecnico, 'id' | 'cidade' | 'ativo' | 'created_at' | 'updated_at'>> & {
+          id_instalador: number;
+          tecnico: string;
+          login: string;
+        };
+        Update: Partial<Omit<ComissaoTecnico, 'id' | 'created_at' | 'updated_at'>>;
+        Relationships: [];
+      };
+      comissao_servicos: {
+        Row: ComissaoServico;
+        Insert: Partial<Pick<ComissaoServico, 'id' | 'ativo' | 'created_at' | 'updated_at'>> & {
+          id_comissionamento: number;
+          produto: string;
+        };
+        Update: Partial<Omit<ComissaoServico, 'id' | 'created_at' | 'updated_at'>>;
         Relationships: [];
       };
     };
