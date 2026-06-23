@@ -5,12 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import logo from '@/assets/logo.jpeg';
 import { UserPlus, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import type { UserRole } from '@/types/database';
 
 const Cadastro = () => {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
+  const [roleSolicitado, setRoleSolicitado] = useState<UserRole>('user');
+  const [loginTecnico, setLoginTecnico] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -31,8 +35,16 @@ const Cadastro = () => {
       return;
     }
 
+    if (roleSolicitado === 'tecnico' && !loginTecnico.trim()) {
+      setError('Informe o login do técnico para vincular seus dados.');
+      return;
+    }
+
     setLoading(true);
-    const { error } = await signUp(email, password, nome);
+    const { error } = await signUp(email, password, nome, {
+      roleSolicitado,
+      loginTecnico: roleSolicitado === 'tecnico' ? loginTecnico : undefined,
+    });
     setLoading(false);
 
     if (error) {
@@ -60,6 +72,7 @@ const Cadastro = () => {
       </div>
     );
   }
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -91,6 +104,32 @@ const Cadastro = () => {
               <Label htmlFor="email">E-mail</Label>
               <Input id="email" type="email" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="roleSolicitado">Tipo de acesso</Label>
+              <Select value={roleSolicitado} onValueChange={(value) => setRoleSolicitado(value as UserRole)}>
+                <SelectTrigger id="roleSolicitado">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="user">Padrão</SelectItem>
+                    <SelectItem value="tecnico">Técnico</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            {roleSolicitado === 'tecnico' && (
+              <div className="space-y-2">
+                <Label htmlFor="loginTecnico">Login do técnico</Label>
+                <Input
+                  id="loginTecnico"
+                  placeholder="Z498116"
+                  value={loginTecnico}
+                  onChange={(e) => setLoginTecnico(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
               <Input id="password" type="password" placeholder="Mínimo 6 caracteres" value={password} onChange={(e) => setPassword(e.target.value)} required />

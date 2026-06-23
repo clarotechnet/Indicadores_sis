@@ -1,25 +1,33 @@
 export type StatusAprovacao = 'pendente' | 'aprovado' | 'rejeitado';
+export type UserRole = 'admin' | 'user' | 'tecnico';
 
-export interface Profile {
+export const USER_ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Admin',
+  user: 'Padrão',
+  tecnico: 'Técnico',
+};
+
+export type Profile = {
   id: string;
   nome: string;
   email: string;
   status_aprovacao: StatusAprovacao;
   cidade_permitida: string | null;
-  role: 'admin' | 'user';
+  role: UserRole;
+  login_tecnico: string | null;
   created_at: string;
-}
+};
 
-export interface DadoTecnico {
+export type DadoTecnico = {
   id: string;
   login: string;
   nome: string;
   cidade: string;
   supervisor: string;
   created_at: string;
-}
+};
 
-export interface IndicadorTecnico {
+export type IndicadorTecnico = {
   id: string;
   data_referencia: string;
   login: string;
@@ -37,9 +45,9 @@ export interface IndicadorTecnico {
   bds: number | null;
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface HorarioPrimeiroCliente {
+export type HorarioPrimeiroCliente = {
   id: string;
   data_referencia: string;
   login: string;
@@ -50,18 +58,18 @@ export interface HorarioPrimeiroCliente {
   classificacao_horario: 'ideal' | 'ruim';
   created_at: string;
   updated_at: string;
-}
+};
 
-export interface HorarioEntradaTecnico {
+export type HorarioEntradaTecnico = {
   id: number;
   data: string;
   login_tecnico: string;
   hora_entrada: string;
   cidade: string;
   created_at: string;
-}
+};
 
-export interface KmTecnica {
+export type KmTecnica = {
   id: string;
   login_tecnico: string;
   recurso: string;
@@ -77,7 +85,7 @@ export interface KmTecnica {
   coord_destino_y: number | null;
   created_at: string;
 
-}
+};
 
 export type IndicadorKey = 'nr35' | 'tnps' | 'inspecao_e' | 'revisita' | 'os_dig' | 'geo' | 'ura' | 'tec1' | 'bds';
 
@@ -125,32 +133,69 @@ export const INDICADOR_INVERTIDO: Record<IndicadorKey, boolean> = {
   bds: false,
 };
 
-export interface SolicitacaoAcesso {
+export type SolicitacaoAcesso = {
   id: string;
   user_id: string;
   nome: string;
   email: string;
-  role_solicitado: 'admin' | 'user';
+  role_solicitado: UserRole;
+  login_tecnico: string | null;
   status: 'pendente' | 'aprovado' | 'rejeitado';
   created_at: string;
-}
+};
+
+export type NotificacaoTipo = 'importacao' | 'cadastro_pendente' | 'sistema';
+export type NotificacaoDestino = 'admin' | 'user' | 'all';
+
+export type Notificacao = {
+  id: string;
+  tipo: NotificacaoTipo;
+  titulo: string;
+  mensagem: string;
+  cidade: string | null;
+  origem: string | null;
+  actor_id: string | null;
+  actor_nome: string | null;
+  target_role: NotificacaoDestino;
+  target_user_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
 
 export const CIDADES = ['NATAL/PARNAMIRIM', 'FORTALEZA', 'MOSSORÓ', 'RECIFE'] as const;
 export type Cidade = typeof CIDADES[number];
 
-export interface TransporteTecnico {
+export type TransporteTecnico = {
   id: string;
   login: string;
   nome: string;
   transporte: string;
-}
+};
+
+export type ExcessoMiscelanea = {
+  id: string;
+  data_execucao: string;
+  numero_wo: string;
+  contrato: string;
+  os: string;
+  servico: string;
+  qtde: number;
+  grupo: string;
+  codigo: string;
+  equipamento: string;
+  tecnico: string;
+  controlador: string;
+  tipo_servico: string;
+  cidade: string;
+  created_at: string;
+};
 
 export type Database = {
   public: {
     Tables: {
       profiles: {
         Row: Profile;
-        Insert: Partial<Profile> & { id: string; nome: string; email: string; status_aprovacao: StatusAprovacao; role: 'admin' | 'user' };
+        Insert: Partial<Profile> & { id: string; nome: string; email: string; status_aprovacao: StatusAprovacao; role: UserRole };
         Update: Partial<Profile>;
         Relationships: [];
       };
@@ -172,16 +217,40 @@ export type Database = {
         Update: Partial<HorarioPrimeiroCliente>;
         Relationships: [];
       };
+      horario_entrada_tecnico: {
+        Row: HorarioEntradaTecnico;
+        Insert: Omit<HorarioEntradaTecnico, 'id' | 'created_at'>;
+        Update: Partial<Omit<HorarioEntradaTecnico, 'id' | 'created_at'>>;
+        Relationships: [];
+      };
       solicitacoes_acesso: {
         Row: SolicitacaoAcesso;
         Insert: Partial<SolicitacaoAcesso> & { user_id: string; nome: string; email: string };
         Update: Partial<SolicitacaoAcesso>;
         Relationships: [];
       };
-        km_tecnica: {
+      notificacoes: {
+        Row: Notificacao;
+        Insert: Partial<Notificacao> & { tipo: NotificacaoTipo; titulo: string; mensagem: string };
+        Update: Partial<Notificacao>;
+        Relationships: [];
+      };
+      km_tecnica: {
         Row: KmTecnica;
         Insert: Omit<KmTecnica, 'id' | 'created_at'>;
         Update: Partial<Omit<KmTecnica, 'id' | 'created_at'>>;
+        Relationships: [];
+      };
+      transporte_tecnico: {
+        Row: TransporteTecnico;
+        Insert: Omit<TransporteTecnico, 'id'>;
+        Update: Partial<Omit<TransporteTecnico, 'id'>>;
+        Relationships: [];
+      };
+      excesso_miscelaneas: {
+        Row: ExcessoMiscelanea;
+        Insert: Omit<ExcessoMiscelanea, 'id' | 'created_at'>;
+        Update: Partial<Omit<ExcessoMiscelanea, 'id' | 'created_at'>>;
         Relationships: [];
       };
     };

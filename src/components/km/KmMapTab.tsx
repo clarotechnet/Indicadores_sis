@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Loader2 } from 'lucide-react';
 import type { KmTecnica } from '@/types/database';
+import type * as Leaflet from 'leaflet';
 
 const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY2NjM4NDY2ZDg2NTRiYTc4MTIwNDIxNTU1ODA3OTA2IiwiaCI6Im11cm11cjY0In0=';
 
@@ -17,6 +18,7 @@ interface RouteSegment {
   from: { lat: number; lng: number; endereco: string };
   to: { lat: number; lng: number; endereco: string };
   geometry: [number, number][];
+  isReturnHome: boolean;
 }
 
 const ROUTE_COLORS = [
@@ -24,13 +26,33 @@ const ROUTE_COLORS = [
   '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1',
 ];
 
+const normalizeRouteText = (value?: string | null) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const isReturnHomeTrecho = (trecho?: string | null) => {
+  const text = normalizeRouteText(trecho);
+  return text.includes('ultimo servico') && text.includes('casa');
+};
+
+const getRouteSortOrder = (row: KmTecnica) => {
+  if (isReturnHomeTrecho(row.trecho)) return Number.MAX_SAFE_INTEGER;
+
+  const matches = [...normalizeRouteText(row.trecho).matchAll(/servico\s*(\d+)/g)];
+  const lastMatch = matches[matches.length - 1];
+
+  return lastMatch ? Number(lastMatch[1]) : 0;
+};
+
 const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [routeSegments, setRouteSegments] = useState<RouteSegment[]>([]);
-  const mapInstanceRef = useRef<any>(null);
-  const layersRef = useRef<any[]>([]);
+  const mapInstanceRef = useRef<Leaflet.Map | null>(null);
+  const layersRef = useRef<Leaflet.Layer[]>([]);
 
   // Get route geometry between two coordinate pairs
   const getRoute = useCallback(async (
@@ -64,27 +86,43 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
   useEffect(() => {
     if (!shouldTraceRoutes) {
       setRouteSegments([]);
+      setStatusMsg('');
+      setLoading(false);
       return;
     }
     // Filter rows that have valid coordinates
-    const rowsWithCoords = data.filter(
-      r => r.coord_origem_x != null && r.coord_origem_y != null &&
-           r.coord_destino_x != null && r.coord_destino_y != null
-    );
+    const rowsWithCoords = data
+      .filter(
+        r => r.coord_origem_x != null && r.coord_origem_y != null &&
+             r.coord_destino_x != null && r.coord_destino_y != null
+      )
+      .sort((a, b) =>
+        a.data.localeCompare(b.data) ||
+        a.recurso.localeCompare(b.recurso) ||
+        getRouteSortOrder(a) - getRouteSortOrder(b) ||
+        a.created_at.localeCompare(b.created_at)
+      );
 
     if (rowsWithCoords.length === 0) {
       setRouteSegments([]);
+      setStatusMsg('');
+      setLoading(false);
       return;
     }
 
+    let cancelled = false;
+
     const process = async () => {
       setLoading(true);
-      setStatusMsg('Traçando rotas...');
+      setStatusMsg('Tracando rotas...');
 
       const segments: RouteSegment[] = [];
+      const lastServiceAddressByRoute = new Map<string, string>();
       let count = 0;
 
       for (const row of rowsWithCoords) {
+        if (cancelled) return;
+
         const fromLat = row.coord_origem_y!;
         const fromLng = row.coord_origem_x!;
         const toLat = row.coord_destino_y!;
@@ -93,25 +131,43 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
         // Skip if same point
         if (fromLat === toLat && fromLng === toLng) continue;
 
+        const routeKey = `${row.login_tecnico || row.recurso}__${row.data}`;
+        const isReturnHome = isReturnHomeTrecho(row.trecho);
+        const destinationAddress = row.endereco_destino || row.trecho;
+        const lastServiceAddress = lastServiceAddressByRoute.get(routeKey);
+        const fromAddress = isReturnHome
+          ? lastServiceAddress || row.trecho
+          : lastServiceAddress || 'Casa do Tecnico';
+        const toAddress = isReturnHome ? 'Casa do Tecnico' : destinationAddress;
+
         const geometry = await getRoute(
           { lat: fromLat, lng: fromLng },
           { lat: toLat, lng: toLng }
         );
 
+        if (cancelled) return;
+
          segments.push({
           tecnico: row.recurso,
           trecho: row.trecho,
           km: row.distancia_km,
-          from: { lat: fromLat, lng: fromLng, endereco: row.endereco_destino || row.trecho },
-          to: { lat: toLat, lng: toLng, endereco: row.endereco_destino || row.trecho },
+          from: { lat: fromLat, lng: fromLng, endereco: fromAddress },
+          to: { lat: toLat, lng: toLng, endereco: toAddress },
           geometry,
+          isReturnHome,
         });
 
+        if (!isReturnHome) {
+          lastServiceAddressByRoute.set(routeKey, destinationAddress);
+        }
+
         count++;
-        setStatusMsg(`Traçando rotas... ${count}/${rowsWithCoords.length}`);
+        setStatusMsg(`Tracando rotas... ${count}/${rowsWithCoords.length}`);
         // Small delay to avoid rate limiting
         await new Promise(r => setTimeout(r, 250));
       }
+
+      if (cancelled) return;
 
       setRouteSegments(segments);
       setStatusMsg('');
@@ -119,6 +175,10 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
     };
 
     process();
+
+    return () => {
+      cancelled = true;
+    };
   }, [data, getRoute, shouldTraceRoutes]);
 
   // Initialize and update map
@@ -129,7 +189,7 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
       const L = await import('leaflet');
       await import('leaflet/dist/leaflet.css');
 
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
         iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
@@ -145,6 +205,7 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
       }
 
       const map = mapInstanceRef.current;
+      if (!map) return;
 
       // Clear old layers
       layersRef.current.forEach(l => map.removeLayer(l));
@@ -195,7 +256,11 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
           // Origin marker
           const fromFill = isFirstOrigin ? '#22c55e' : '#f59e0b';
           const fromBorder = isFirstOrigin ? '#166534' : '#92400e';
-          const fromLabel = isFirstOrigin ? '🟢 Início (Casa)' : `🟠 Parada ${segIdx}`;
+          const fromLabel = seg.isReturnHome
+            ? 'Ultimo servico'
+            : isFirstOrigin
+              ? 'Inicio (Casa)'
+              : `Parada ${segIdx}`;
           const markerFrom = L.circleMarker([seg.from.lat, seg.from.lng], {
             radius: isFirstOrigin ? 8 : 5,
             fillColor: fromFill,
@@ -209,7 +274,11 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
           // Destination marker
           const toFill = isLastDest ? '#ef4444' : '#f59e0b';
           const toBorder = isLastDest ? '#911111' : '#92400e';
-          const toLabel = isLastDest ? '🔴 Fim (Retorno)' : `🟠 Parada ${segIdx + 1}`;
+          const toLabel = seg.isReturnHome
+            ? 'Fim (Casa)'
+            : isLastDest
+              ? 'Fim'
+              : `Parada ${segIdx + 1}`;
           const markerTo = L.circleMarker([seg.to.lat, seg.to.lng], {
             radius: isLastDest ? 8 : 5,
             fillColor: toFill,

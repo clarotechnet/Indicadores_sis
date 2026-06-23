@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CheckCircle, XCircle, Clock, Users, Loader2, ArrowLeft, UserPlus, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Profile, StatusAprovacao, SolicitacaoAcesso } from '@/types/database';
+import type { Profile, StatusAprovacao, SolicitacaoAcesso, UserRole } from '@/types/database';
+import { USER_ROLE_LABELS } from '@/types/database';
 
 const statusConfig: Record<StatusAprovacao, { label: string; variant: 'default' | 'destructive' | 'secondary' | 'outline' }> = {
   pendente: { label: 'Pendente', variant: 'secondary' },
@@ -27,7 +28,7 @@ const Admin = () => {
   const [loading, setLoading] = useState(true);
   const [loadingSolicitacoes, setLoadingSolicitacoes] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
-  const [selectedRoles, setSelectedRoles] = useState<Record<string, 'admin' | 'user'>>({});
+  const [selectedRoles, setSelectedRoles] = useState<Record<string, UserRole>>({});
 
   useEffect(() => {
     if (profile?.role !== 'admin') {
@@ -54,7 +55,8 @@ const Admin = () => {
 
   const fetchSolicitacoes = async () => {
     setLoadingSolicitacoes(true);
-    const { data, error } = await (supabase.from('solicitacoes_acesso') as any)
+    const { data, error } = await supabase
+      .from('solicitacoes_acesso')
       .select('*')
       .order('created_at', { ascending: false });
     if (error) {
@@ -67,8 +69,8 @@ const Admin = () => {
     }
     const items = (data as SolicitacaoAcesso[]) || [];
     setSolicitacoes(items);
-    const roles: Record<string, 'admin' | 'user'> = {};
-    items.forEach((s) => { roles[s.id] = s.role_solicitado as 'admin' | 'user'; });
+    const roles: Record<string, UserRole> = {};
+    items.forEach((s) => { roles[s.id] = s.role_solicitado ?? 'user'; });
     setSelectedRoles(roles);
     setLoadingSolicitacoes(false);
   };
@@ -76,8 +78,24 @@ const Admin = () => {
   const aprovarSolicitacao = async (solicitacao: SolicitacaoAcesso) => {
     setUpdating(solicitacao.id);
     const role = selectedRoles[solicitacao.id] || 'user';
-    const { error: insertError } = await (supabase.from('profiles') as any).upsert(
-      { id: solicitacao.user_id, nome: solicitacao.nome, email: solicitacao.email, status_aprovacao: 'aprovado', cidade_permitida: null, role },
+    const loginTecnico = solicitacao.login_tecnico?.trim().toUpperCase() || null;
+
+    if (role === 'tecnico' && !loginTecnico) {
+      toast.error('Informe o login do técnico antes de aprovar este perfil.');
+      setUpdating(null);
+      return;
+    }
+
+    const { error: insertError } = await supabase.from('profiles').upsert(
+      {
+        id: solicitacao.user_id,
+        nome: solicitacao.nome,
+        email: solicitacao.email,
+        status_aprovacao: 'aprovado',
+        cidade_permitida: null,
+        role,
+        login_tecnico: role === 'tecnico' ? loginTecnico : null,
+      },
       { onConflict: 'id' }
     );
     if (insertError) {
@@ -85,7 +103,7 @@ const Admin = () => {
       setUpdating(null);
       return;
     }
-    const { error: deleteError } = await (supabase.from('solicitacoes_acesso') as any).delete().eq('id', solicitacao.id);
+    const { error: deleteError } = await supabase.from('solicitacoes_acesso').delete().eq('id', solicitacao.id);
     if (deleteError) toast.error(`Usuário aprovado, mas falhou ao remover solicitação: ${deleteError.message}`);
     await fetchUsers();
     await fetchSolicitacoes();
@@ -95,7 +113,7 @@ const Admin = () => {
 
   const rejeitarSolicitacao = async (solicitacao: SolicitacaoAcesso) => {
     setUpdating(solicitacao.id);
-    const { error } = await (supabase.from('solicitacoes_acesso') as any).update({ status: 'rejeitado' }).eq('id', solicitacao.id);
+    const { error } = await supabase.from('solicitacoes_acesso').update({ status: 'rejeitado' }).eq('id', solicitacao.id);
     if (error) {
       toast.error(`Falha ao rejeitar solicitação: ${error.message}`);
       setUpdating(null);
@@ -106,9 +124,15 @@ const Admin = () => {
     setUpdating(null);
   };
 
-  const updateUserRole = async (userId: string, role: 'admin' | 'user') => {
+  const updateUserRole = async (user: Profile, role: UserRole) => {
+    if (role === 'tecnico' && !user.login_tecnico?.trim()) {
+      toast.error('Este usuário não tem login técnico vinculado. Atualize o banco com o login antes de mudar para Técnico.');
+      return;
+    }
+
+    const userId = user.id;
     setUpdating(userId);
-    const { error } = await (supabase.from('profiles') as any).update({ role }).eq('id', userId);
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
     if (error) {
       toast.error(`Falha ao atualizar nível de acesso: ${error.message}`);
       setUpdating(null);
@@ -128,6 +152,9 @@ const Admin = () => {
         <div className="min-w-0">
           <p className="font-medium text-sm text-foreground truncate">{sol.nome}</p>
           <p className="text-xs text-muted-foreground truncate">{sol.email}</p>
+          {sol.login_tecnico && (
+            <p className="text-xs text-muted-foreground truncate">Login técnico: {sol.login_tecnico}</p>
+          )}
         </div>
         <Badge
           variant={sol.status === 'pendente' ? 'secondary' : sol.status === 'aprovado' ? 'default' : 'destructive'}
@@ -142,13 +169,14 @@ const Admin = () => {
         {sol.status === 'pendente' && (
           <Select
             value={selectedRoles[sol.id] || 'user'}
-            onValueChange={(val) => setSelectedRoles((prev) => ({ ...prev, [sol.id]: val as 'admin' | 'user' }))}
+            onValueChange={(val) => setSelectedRoles((prev) => ({ ...prev, [sol.id]: val as UserRole }))}
           >
-            <SelectTrigger className="w-24 h-7 text-xs">
+            <SelectTrigger className="h-7 w-28 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="user">Padrão</SelectItem>
+              <SelectItem value="tecnico">Técnico</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
             </SelectContent>
           </Select>
@@ -180,6 +208,9 @@ const Admin = () => {
         <div className="min-w-0">
           <p className="font-medium text-sm text-foreground truncate">{user.nome}</p>
           <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+          {user.login_tecnico && (
+            <p className="text-xs text-muted-foreground truncate">Login técnico: {user.login_tecnico}</p>
+          )}
         </div>
         <Badge variant={statusConfig[user.status_aprovacao].variant} className="shrink-0 ml-2">
           {statusConfig[user.status_aprovacao].label}
@@ -190,12 +221,13 @@ const Admin = () => {
         {updating === user.id ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <Select value={user.role} onValueChange={(val) => updateUserRole(user.id, val as 'admin' | 'user')}>
-            <SelectTrigger className="w-24 h-7 text-xs">
+          <Select value={user.role} onValueChange={(val) => updateUserRole(user, val as UserRole)}>
+            <SelectTrigger className="h-7 w-28 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="user">Padrão</SelectItem>
+              <SelectItem value="tecnico">Técnico</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
             </SelectContent>
           </Select>
@@ -209,7 +241,7 @@ const Admin = () => {
           disabled={updating === user.id}
           onClick={async () => {
             setUpdating(user.id);
-            await (supabase.from('profiles') as any).update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
+            await supabase.from('profiles').update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
             await fetchUsers();
             setUpdating(null);
           }}
@@ -223,7 +255,7 @@ const Admin = () => {
   return (
     <div className="min-h-screen bg-background">
       <DashboardHeader />
-      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      <main className="dashboard-container flex flex-col gap-4 sm:gap-5">
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4" />
@@ -286,6 +318,7 @@ const Admin = () => {
                           <TableRow>
                             <TableHead>Nome</TableHead>
                             <TableHead>E-mail</TableHead>
+                            <TableHead>Login técnico</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Tipo de Acesso</TableHead>
                             <TableHead>Data</TableHead>
@@ -297,6 +330,7 @@ const Admin = () => {
                             <TableRow key={sol.id}>
                               <TableCell className="font-medium">{sol.nome}</TableCell>
                               <TableCell className="text-muted-foreground">{sol.email}</TableCell>
+                              <TableCell className="text-muted-foreground text-sm">{sol.login_tecnico || '-'}</TableCell>
                               <TableCell>
                                 <Badge variant={sol.status === 'pendente' ? 'secondary' : sol.status === 'aprovado' ? 'default' : 'destructive'}>
                                   {sol.status === 'pendente' && <Clock className="h-3 w-3 mr-1" />}
@@ -309,16 +343,17 @@ const Admin = () => {
                                 {sol.status === 'pendente' ? (
                                   <Select
                                     value={selectedRoles[sol.id] || 'user'}
-                                    onValueChange={(val) => setSelectedRoles((prev) => ({ ...prev, [sol.id]: val as 'admin' | 'user' }))}
+                                    onValueChange={(val) => setSelectedRoles((prev) => ({ ...prev, [sol.id]: val as UserRole }))}
                                   >
                                     <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="user">Padrão</SelectItem>
+                                      <SelectItem value="tecnico">Técnico</SelectItem>
                                       <SelectItem value="admin">Admin</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 ) : (
-                                  <span className="capitalize">{sol.role_solicitado === 'admin' ? 'Admin' : 'Padrão'}</span>
+                                  <span>{USER_ROLE_LABELS[sol.role_solicitado] ?? 'Padrão'}</span>
                                 )}
                               </TableCell>
                               <TableCell className="text-muted-foreground text-sm">{new Date(sol.created_at).toLocaleDateString('pt-BR')}</TableCell>
@@ -372,6 +407,7 @@ const Admin = () => {
                           <TableRow>
                             <TableHead>Nome</TableHead>
                             <TableHead>E-mail</TableHead>
+                            <TableHead>Login técnico</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Tipo</TableHead>
                             <TableHead>Data</TableHead>
@@ -383,6 +419,7 @@ const Admin = () => {
                             <TableRow key={user.id}>
                               <TableCell className="font-medium">{user.nome}</TableCell>
                               <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                              <TableCell className="text-muted-foreground text-sm">{user.login_tecnico || '-'}</TableCell>
                               <TableCell>
                                 <Badge variant={statusConfig[user.status_aprovacao].variant}>
                                   {user.status_aprovacao === 'pendente' && <Clock className="h-3 w-3 mr-1" />}
@@ -395,10 +432,11 @@ const Admin = () => {
                                 {updating === user.id ? (
                                   <Loader2 className="h-4 w-4 animate-spin inline" />
                                 ) : (
-                                  <Select value={user.role} onValueChange={(val) => updateUserRole(user.id, val as 'admin' | 'user')}>
+                                  <Select value={user.role} onValueChange={(val) => updateUserRole(user, val as UserRole)}>
                                     <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="user">Padrão</SelectItem>
+                                      <SelectItem value="tecnico">Técnico</SelectItem>
                                       <SelectItem value="admin">Admin</SelectItem>
                                     </SelectContent>
                                   </Select>
@@ -413,7 +451,7 @@ const Admin = () => {
                                     disabled={updating === user.id}
                                     onClick={async () => {
                                       setUpdating(user.id);
-                                      await (supabase.from('profiles') as any).update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
+                                      await supabase.from('profiles').update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
                                       await fetchUsers();
                                       setUpdating(null);
                                     }}

@@ -29,6 +29,10 @@ const KmManualDialog: React.FC<KmManualDialogProps> = ({ open, onOpenChange, onC
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCity) {
+      toast.error('Selecione uma cidade antes de adicionar o registro');
+      return;
+    }
     if (!form.login_tecnico || !form.recurso) {
       toast.error('Preencha Login e Recurso');
       return;
@@ -46,7 +50,11 @@ const KmManualDialog: React.FC<KmManualDialogProps> = ({ open, onOpenChange, onC
       distancia_km: distancia,
       frente: form.frente,
       cidade: selectedCity,
-    } as any);
+      coord_origem_x: null,
+      coord_origem_y: null,
+      coord_destino_x: null,
+      coord_destino_y: null,
+    });
 
     if (error) {
       toast.error('Erro ao salvar: ' + error.message);

@@ -15,7 +15,9 @@ const getStoredCity = (): Cidade | null => {
     if (stored && (CIDADES as readonly string[]).includes(stored)) {
       return stored as Cidade;
     }
-  } catch {}
+  } catch {
+    return null;
+  }
   return null;
 };
 
@@ -30,7 +32,9 @@ export const CityProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         localStorage.removeItem('technet_selected_city');
       }
-    } catch {}
+    } catch {
+      // Ignore localStorage errors when storage is unavailable.
+    }
   };
 
   return (

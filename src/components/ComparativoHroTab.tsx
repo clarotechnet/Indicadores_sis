@@ -39,7 +39,8 @@ const secondsToTime = (s: number): string => {
   const h = Math.floor(abs / 3600);
   const m = Math.floor((abs % 3600) / 60);
   const sec = abs % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  const sign = s < 0 ? '-' : '';
+  return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 };
 
 const minutosParaHorario = (minutos: number): string => {
@@ -49,6 +50,7 @@ const minutosParaHorario = (minutos: number): string => {
 };
 
 const classificarDeslocamento = (tempoMinutos: number): 'IDEAL' | 'RUIM' | 'NEUTRO' => {
+  if (tempoMinutos < 0) return 'RUIM';
   if (tempoMinutos >= 40) return 'RUIM';
   if (tempoMinutos >= 30) return 'NEUTRO';
   return 'IDEAL';
@@ -76,16 +78,26 @@ const ComparativoHroTab: React.FC<ComparativoHroTabProps> = ({ horarioData }) =>
   useEffect(() => {
     const fetchEntradas = async () => {
       if (!selectedCity) return;
+      const logins = [...new Set(horarioData.map((h) => h.login.toUpperCase()))];
+      if (logins.length === 0) {
+        setEntradas([]);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       const { data } = await supabase
         .from('horario_entrada_tecnico')
         .select('*')
-        .eq('cidade', selectedCity);
+        .eq('cidade', selectedCity)
+        .in('login_tecnico', logins)
+        .order('data', { ascending: true })
+        .order('login_tecnico', { ascending: true });
       setEntradas((data as HorarioEntrada[]) || []);
       setLoading(false);
     };
     fetchEntradas();
-  }, [selectedCity]);
+  }, [selectedCity, horarioData]);
 
   const comparativo = useMemo<ComparativoRow[]>(() => {
     const rows: ComparativoRow[] = [];
@@ -133,9 +145,11 @@ const ComparativoHroTab: React.FC<ComparativoHroTabProps> = ({ horarioData }) =>
   }, [comparativo]);
 
   const ideal = latestByLogin.filter((r) => r.classificacao === 'IDEAL');
+  const neutro = latestByLogin.filter((r) => r.classificacao === 'NEUTRO');
   const ruim = latestByLogin.filter((r) => r.classificacao === 'RUIM');
   const total = latestByLogin.length;
   const pctIdeal = total > 0 ? (ideal.length / total) * 100 : 0;
+  const pctNeutro = total > 0 ? (neutro.length / total) * 100 : 0;
   const pctRuim = total > 0 ? (ruim.length / total) * 100 : 0;
 
   // Rankings by hora_entrada (minutes from midnight)
@@ -172,14 +186,16 @@ const ComparativoHroTab: React.FC<ComparativoHroTabProps> = ({ horarioData }) =>
 
   const pieData = [
     { name: 'Ideal', value: ideal.length },
+    { name: 'Neutro', value: neutro.length },
     { name: 'Ruim', value: ruim.length },
   ];
-  const pieColors = ['hsl(142, 71%, 45%)', 'hsl(0, 84%, 60%)'];
+  const pieColors = ['hsl(142, 71%, 45%)', 'hsl(var(--warning))', 'hsl(0, 84%, 60%)'];
 
   return (
     <div className="space-y-4 sm:space-y-6 animate-fade-in">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <KPICard title="Tempo Ideal" value={String(ideal.length)} subtitle={`${pctIdeal.toFixed(1)}%`} icon={CheckCircle} color="success" />
+        <KPICard title="Tempo Neutro" value={String(neutro.length)} subtitle={`${pctNeutro.toFixed(1)}%`} icon={Clock} color="warning" />
         <KPICard title="Tempo Ruim" value={String(ruim.length)} subtitle={`${pctRuim.toFixed(1)}%`} icon={XCircle} color="destructive" />
         <KPICard title="% Ideal" value={`${pctIdeal.toFixed(1)}%`} icon={Clock} color="success" />
         <KPICard title="Avaliados" value={String(total)} icon={Users} color="primary" />
