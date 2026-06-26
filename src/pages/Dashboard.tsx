@@ -105,19 +105,42 @@ const Dashboard = () => {
       return all;
     };
 
+    const fetchActiveLogins = async (): Promise<Set<string>> => {
+      let query = supabase
+        .from('dados_tecnicos')
+        .select('login')
+        .eq('cidade', selectedCity)
+        .eq('ativo', true);
+
+      if (technicianLogin) {
+        query = query.eq('login', technicianLogin);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        throw new Error(`Erro ao buscar tecnicos ativos: ${error.message}`);
+      }
+
+      return new Set((data || []).map((tecnico) => tecnico.login.trim().toUpperCase()));
+    };
+
     try {
-      const [ind, hor] = await Promise.all([
+      const [ind, hor, activeLogins] = await Promise.all([
         fetchAll<IndicadorTecnico>('indicadores_tecnicos'),
         fetchAll<HorarioPrimeiroCliente>('horario_primeiro_cliente'),
+        fetchActiveLogins(),
       ]);
 
-      setAllIndicadores(ind);
-      setAllHorarios(hor);
+      const activeIndicadores = ind.filter((row) => activeLogins.has(row.login.trim().toUpperCase()));
+      const activeHorarios = hor.filter((row) => activeLogins.has(row.login.trim().toUpperCase()));
 
-      if (ind.length > 0) {
-        const maxDate = ind.reduce(
+      setAllIndicadores(activeIndicadores);
+      setAllHorarios(activeHorarios);
+
+      if (activeIndicadores.length > 0) {
+        const maxDate = activeIndicadores.reduce(
           (max, d) => (d.data_referencia > max ? d.data_referencia : max),
-          ind[0].data_referencia,
+          activeIndicadores[0].data_referencia,
         );
         setLatestDate(maxDate);
       } else {

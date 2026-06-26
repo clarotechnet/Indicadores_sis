@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CheckCircle, XCircle, Clock, Users, Loader2, ArrowLeft, UserPlus, ShieldCheck } from 'lucide-react';
+import SupervisorManagementTab from '@/components/admin/SupervisorManagementTab';
+import { CheckCircle, XCircle, Clock, Users, Loader2, ArrowLeft, UserPlus, ShieldCheck, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Profile, StatusAprovacao, SolicitacaoAcesso, UserRole } from '@/types/database';
 import { USER_ROLE_LABELS } from '@/types/database';
@@ -262,8 +263,8 @@ const Admin = () => {
             <span className="hidden sm:inline">Voltar</span>
           </Button>
           <h2 className="text-lg sm:text-2xl font-display font-bold text-foreground flex items-center gap-2">
-            <Users className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-            Usuários
+            <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+            Configurações
           </h2>
           {pendentes > 0 && (
             <Badge variant="destructive" className="text-xs sm:text-sm">
@@ -288,6 +289,10 @@ const Admin = () => {
               <ShieldCheck className="h-4 w-4" />
               <span className="hidden sm:inline">Usuários Aprovados</span>
               <span className="sm:hidden">Aprovados</span>
+            </TabsTrigger>
+            <TabsTrigger value="tecnicos" className="gap-1 text-xs sm:text-sm">
+              <Users className="h-4 w-4" />
+              <span>Técnicos</span>
             </TabsTrigger>
           </TabsList>
 
@@ -469,6 +474,10 @@ const Admin = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="tecnicos">
+            <SupervisorManagementTab />
           </TabsContent>
         </Tabs>
       </main>

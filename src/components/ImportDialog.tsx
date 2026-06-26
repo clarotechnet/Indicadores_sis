@@ -93,7 +93,8 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
       const { data: dadosTecnicos, error: fetchError } = await supabase
         .from('dados_tecnicos')
         .select('*')
-        .eq('cidade', selectedCity);
+        .eq('cidade', selectedCity)
+        .eq('ativo', true);
 
         if (fetchError) {
         setResult({ success: 0, errors: [`Erro ao buscar técnicos: ${fetchError.message}. Tente fazer login novamente.`], skipped: 0 });
@@ -143,7 +144,7 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, onOpenChange, onImpor
         const tecnico = tecnicoMap.get(login);
 
         if (!tecnico) {
-          errors.push(`Login "${login}" não encontrado em dados_tecnicos.`);
+          errors.push(`Login "${login}" não encontrado ou inativo em dados_tecnicos.`);
           skipped++;
           continue;
         }

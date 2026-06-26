@@ -19,12 +19,22 @@ export type Profile = {
 };
 
 export type DadoTecnico = {
-  id: string;
   login: string;
   nome: string;
   cidade: string;
   supervisor: string;
+  ativo: boolean;
   created_at: string;
+};
+
+export type Supervisor = {
+  id: number;
+  nome: string;
+  cidade: string;
+  nome_normalizado: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type IndicadorTecnico = {
@@ -223,6 +233,12 @@ export type Database = {
         Row: DadoTecnico;
         Insert: Partial<DadoTecnico> & { login: string; nome: string; cidade: string; supervisor: string };
         Update: Partial<DadoTecnico>;
+        Relationships: [];
+      };
+      supervisores: {
+        Row: Supervisor;
+        Insert: Partial<Pick<Supervisor, 'id' | 'ativo' | 'created_at' | 'updated_at'>> & { nome: string; cidade: string };
+        Update: Partial<Omit<Supervisor, 'id' | 'nome_normalizado' | 'created_at' | 'updated_at'>>;
         Relationships: [];
       };
       indicadores_tecnicos: {

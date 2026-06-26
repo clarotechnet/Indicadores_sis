@@ -103,7 +103,8 @@ const KmRotas = () => {
     let query = supabase
       .from('dados_tecnicos')
       .select('*')
-      .eq('cidade', selectedCity);
+      .eq('cidade', selectedCity)
+      .eq('ativo', true);
 
     if (technicianLogin) {
       query = query.eq('login', technicianLogin);
@@ -178,8 +179,13 @@ const KmRotas = () => {
     return map;
   }, [dadosTecnicos]);
 
+  const visibleData = useMemo(() => {
+    const activeLogins = new Set(dadosTecnicos.map((tecnico) => tecnico.login.trim().toUpperCase()));
+    return data.filter((row) => activeLogins.has(row.login_tecnico?.trim().toUpperCase() || ''));
+  }, [data, dadosTecnicos]);
+
   const filteredData = useMemo(() => {
-    let d = data;
+    let d = visibleData;
 
     if (filters.dataInicial) d = d.filter((r) => r.data >= filters.dataInicial);
     if (filters.dataFinal) d = d.filter((r) => r.data <= filters.dataFinal);
@@ -190,19 +196,19 @@ const KmRotas = () => {
     }
 
     return d;
-  }, [data, filters, supervisorMap]);
+  }, [filters, supervisorMap, visibleData]);
 
-  const tecnicos = useMemo(() => [...new Set(data.map((d) => d.recurso))].sort(), [data]);
-  const frentes = useMemo(() => [...new Set(data.map((d) => d.frente).filter(Boolean))].sort(), [data]);
+  const tecnicos = useMemo(() => [...new Set(visibleData.map((d) => d.recurso))].sort(), [visibleData]);
+  const frentes = useMemo(() => [...new Set(visibleData.map((d) => d.frente).filter(Boolean))].sort(), [visibleData]);
 
   const supervisores = useMemo(() => {
     const set = new Set<string>();
-    data.forEach((d) => {
+    visibleData.forEach((d) => {
       const sup = supervisorMap.get(d.login_tecnico?.toUpperCase() || '');
       if (sup) set.add(sup);
     });
     return [...set].sort();
-  }, [data, supervisorMap]);
+  }, [supervisorMap, visibleData]);
 
   const totalKm = useMemo(() => filteredData.reduce((s, d) => s + (d.distancia_km || 0), 0), [filteredData]);
   const totalOS = useMemo(() => filteredData.filter(isKmServiceOrder).length, [filteredData]);

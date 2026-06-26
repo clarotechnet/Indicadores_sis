@@ -70,7 +70,8 @@ const ExcessoMiscelaneas = () => {
     const { data: rows } = await supabase
       .from('dados_tecnicos')
       .select('*')
-      .eq('cidade', selectedCity);
+      .eq('cidade', selectedCity)
+      .eq('ativo', true);
 
     setDadosTecnicos((rows as DadoTecnico[]) || []);
   };
@@ -91,8 +92,13 @@ const ExcessoMiscelaneas = () => {
     return map;
   }, [dadosTecnicos]);
 
+  const dataAtivos = useMemo(
+    () => data.filter((row) => tecnicoSupervisorMap.has(row.tecnico?.toUpperCase() || '')),
+    [data, tecnicoSupervisorMap],
+  );
+
   const filteredData = useMemo(() => {
-    let d = data;
+    let d = dataAtivos;
 
     if (filters.mes) {
       d = d.filter((r) => r.data_execucao?.startsWith(filters.mes));
@@ -108,10 +114,10 @@ const ExcessoMiscelaneas = () => {
     }
 
     return d;
-  }, [data, filters, tecnicoSupervisorMap]);
+  }, [dataAtivos, filters, tecnicoSupervisorMap]);
 
   const supervisores = useMemo(() => [...new Set(dadosTecnicos.map((d) => d.supervisor))].sort(), [dadosTecnicos]);
-  const tecnicos = useMemo(() => [...new Set(data.map((d) => d.tecnico).filter(Boolean))].sort(), [data]);
+  const tecnicos = useMemo(() => [...new Set(dataAtivos.map((d) => d.tecnico).filter(Boolean))].sort(), [dataAtivos]);
 
   if (!selectedCity) {
     return (
