@@ -24,7 +24,6 @@ export type DadoTecnico = {
   cidade: string;
   supervisor: string;
   ativo: boolean;
-  created_at: string;
 };
 
 export type Supervisor = {

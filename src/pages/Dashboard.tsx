@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
 import { supabase } from '@/lib/supabase';
-import type { HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
+import type { DadoTecnico, HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
 import { INDICADOR_LABELS } from '@/types/database';
 
 const INDICATOR_KEYS: IndicadorKey[] = ['nr35', 'tnps', 'inspecao_e', 'revisita', 'os_dig', 'geo', 'ura', 'tec1', 'bds'];
@@ -33,6 +33,10 @@ const getStoredTab = (): string => {
   }
 };
 
+const normalizeLogin = (login: string) => login.trim().toUpperCase();
+
+const sameItems = (a: string[], b: string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
+
 const Dashboard = () => {
   const { selectedCity } = useCity();
   const { profile } = useAuth();
@@ -42,6 +46,7 @@ const Dashboard = () => {
 
   const [allIndicadores, setAllIndicadores] = useState<IndicadorTecnico[]>([]);
   const [allHorarios, setAllHorarios] = useState<HorarioPrimeiroCliente[]>([]);
+  const [activeTechnicians, setActiveTechnicians] = useState<DadoTecnico[]>([]);
   const [latestDate, setLatestDate] = useState<string>('');
   const [loadError, setLoadError] = useState<string>('');
   const [loadingData, setLoadingData] = useState(true);
@@ -57,12 +62,16 @@ const Dashboard = () => {
 
   const fetchData = async () => {
     if (!selectedCity) {
+      setAllIndicadores([]);
+      setAllHorarios([]);
+      setActiveTechnicians([]);
       setLoadingData(false);
       return;
     }
     if (profile?.role === 'tecnico' && !technicianLogin) {
       setAllIndicadores([]);
       setAllHorarios([]);
+      setActiveTechnicians([]);
       setLatestDate('');
       setLoadError('Seu perfil técnico ainda não tem login vinculado. Peça para um administrador ajustar seu cadastro.');
       setLoadingData(false);
@@ -105,10 +114,10 @@ const Dashboard = () => {
       return all;
     };
 
-    const fetchActiveLogins = async (): Promise<Set<string>> => {
+    const fetchActiveTechnicians = async (): Promise<DadoTecnico[]> => {
       let query = supabase
         .from('dados_tecnicos')
-        .select('login')
+        .select('login,nome,cidade,supervisor,ativo')
         .eq('cidade', selectedCity)
         .eq('ativo', true);
 
@@ -116,26 +125,47 @@ const Dashboard = () => {
         query = query.eq('login', technicianLogin);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query.order('nome', { ascending: true });
       if (error) {
         throw new Error(`Erro ao buscar tecnicos ativos: ${error.message}`);
       }
 
-      return new Set((data || []).map((tecnico) => tecnico.login.trim().toUpperCase()));
+      return (data as DadoTecnico[] | null) || [];
     };
 
     try {
-      const [ind, hor, activeLogins] = await Promise.all([
+      const [ind, hor, technicianRows] = await Promise.all([
         fetchAll<IndicadorTecnico>('indicadores_tecnicos'),
         fetchAll<HorarioPrimeiroCliente>('horario_primeiro_cliente'),
-        fetchActiveLogins(),
+        fetchActiveTechnicians(),
       ]);
 
-      const activeIndicadores = ind.filter((row) => activeLogins.has(row.login.trim().toUpperCase()));
-      const activeHorarios = hor.filter((row) => activeLogins.has(row.login.trim().toUpperCase()));
+      const technicianByLogin = new Map(technicianRows.map((tecnico) => [normalizeLogin(tecnico.login), tecnico]));
+      const applyCurrentTechnician = <
+        T extends Pick<IndicadorTecnico, 'login' | 'tecnico' | 'supervisor' | 'cidade'>,
+      >(row: T): T | null => {
+        const tecnico = technicianByLogin.get(normalizeLogin(row.login));
+        if (!tecnico) return null;
+
+        return {
+          ...row,
+          login: normalizeLogin(tecnico.login),
+          tecnico: tecnico.nome,
+          supervisor: tecnico.supervisor,
+          cidade: tecnico.cidade,
+        };
+      };
+
+      const activeIndicadores = ind
+        .map(applyCurrentTechnician)
+        .filter((row): row is IndicadorTecnico => row !== null);
+      const activeHorarios = hor
+        .map(applyCurrentTechnician)
+        .filter((row): row is HorarioPrimeiroCliente => row !== null);
 
       setAllIndicadores(activeIndicadores);
       setAllHorarios(activeHorarios);
+      setActiveTechnicians(technicianRows);
 
       if (activeIndicadores.length > 0) {
         const maxDate = activeIndicadores.reduce(
@@ -149,6 +179,7 @@ const Dashboard = () => {
     } catch (error) {
       setAllIndicadores([]);
       setAllHorarios([]);
+      setActiveTechnicians([]);
       setLatestDate('');
       setLoadError(error instanceof Error ? error.message : 'Erro ao carregar dados do dashboard.');
     } finally {
@@ -230,8 +261,43 @@ const Dashboard = () => {
     return data;
   }, [horarios, filters]);
 
-  const tecnicos = useMemo(() => [...new Set(indicadores.map((d) => d.tecnico))].sort(), [indicadores]);
-  const supervisores = useMemo(() => [...new Set(indicadores.map((d) => d.supervisor))].sort(), [indicadores]);
+  const supervisores = useMemo(
+    () => [...new Set(activeTechnicians.map((d) => d.supervisor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [activeTechnicians],
+  );
+  const tecnicos = useMemo(() => {
+    const selectedSupervisors = new Set(filters.supervisores);
+
+    return [
+      ...new Set(
+        activeTechnicians
+          .filter((tecnico) => selectedSupervisors.size === 0 || selectedSupervisors.has(tecnico.supervisor))
+          .map((tecnico) => tecnico.nome)
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [activeTechnicians, filters.supervisores]);
+
+  useEffect(() => {
+    if (loadingData) return;
+
+    setFilters((current) => {
+      const supervisorOptions = new Set(supervisores);
+      const tecnicoOptions = new Set(tecnicos);
+      const nextSupervisores = current.supervisores.filter((supervisor) => supervisorOptions.has(supervisor));
+      const nextTecnicos = current.tecnicos.filter((tecnico) => tecnicoOptions.has(tecnico));
+
+      if (sameItems(current.supervisores, nextSupervisores) && sameItems(current.tecnicos, nextTecnicos)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        supervisores: nextSupervisores,
+        tecnicos: nextTecnicos,
+      };
+    });
+  }, [loadingData, supervisores, tecnicos]);
 
   const clearFilters = () => setFilters({ tecnicos: [], supervisores: [], dataInicial: '', dataFinal: '', busca: '' });
 
