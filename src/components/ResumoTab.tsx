@@ -28,6 +28,13 @@ const KEYS: IndicadorKey[] = ['nr35', 'tnps', 'inspecao_e', 'revisita', 'os_dig'
 
 type MetricRow = Pick<IndicadorTecnico, 'login' | 'tecnico' | 'supervisor'> & Record<IndicadorKey, number | null>;
 
+type MetricAccumulator = {
+  login: string;
+  tecnico: string;
+  supervisor: string;
+  metrics: Record<IndicadorKey, { sum: number; count: number }>;
+};
+
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 
 const normalizeScore = (key: IndicadorKey, value: number) => {
@@ -43,6 +50,31 @@ const formatPercent = (value: number) =>
   `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 const formatNumber = (value: number) => value.toLocaleString('pt-BR');
+
+const createEmptyMetricRow = (login: string, tecnico: string, supervisor: string): MetricRow => ({
+  login,
+  tecnico,
+  supervisor,
+  nr35: null,
+  tnps: null,
+  inspecao_e: null,
+  revisita: null,
+  os_dig: null,
+  geo: null,
+  ura: null,
+  tec1: null,
+  bds: null,
+});
+
+const createEmptyMetricAccumulator = (login: string, tecnico: string, supervisor: string): MetricAccumulator => ({
+  login,
+  tecnico,
+  supervisor,
+  metrics: Object.fromEntries(KEYS.map((key) => [key, { sum: 0, count: 0 }])) as Record<
+    IndicadorKey,
+    { sum: number; count: number }
+  >,
+});
 
 const formatDate = (date: string) =>
   new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', {
@@ -79,20 +111,7 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
     });
 
     return Object.entries(latestRecordByKey).map(([login, metrics]) => {
-      const entry: MetricRow = {
-        login,
-        tecnico: technicianNames[login],
-        supervisor: technicianSupervisors[login],
-        nr35: null,
-        tnps: null,
-        inspecao_e: null,
-        revisita: null,
-        os_dig: null,
-        geo: null,
-        ura: null,
-        tec1: null,
-        bds: null,
-      };
+      const entry = createEmptyMetricRow(login, technicianNames[login], technicianSupervisors[login]);
 
       KEYS.forEach((key) => {
         entry[key] = metrics[key]?.valor ?? null;
@@ -125,6 +144,41 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
       }),
     [latestDataForMetrics],
   );
+
+  const difficultyDataForMetrics = React.useMemo(() => {
+    if (!isDateFiltered) return latestDataForMetrics;
+
+    const byTechnician = new Map<string, MetricAccumulator>();
+
+    data.forEach((row) => {
+      const current =
+        byTechnician.get(row.login) ?? createEmptyMetricAccumulator(row.login, row.tecnico, row.supervisor);
+
+      current.tecnico = row.tecnico;
+      current.supervisor = row.supervisor;
+
+      KEYS.forEach((key) => {
+        const value = row[key];
+        if (typeof value !== 'number' || !Number.isFinite(value)) return;
+
+        current.metrics[key].sum += value;
+        current.metrics[key].count += 1;
+      });
+
+      byTechnician.set(row.login, current);
+    });
+
+    return [...byTechnician.values()].map((row) => {
+      const entry = createEmptyMetricRow(row.login, row.tecnico, row.supervisor);
+
+      KEYS.forEach((key) => {
+        const metric = row.metrics[key];
+        entry[key] = metric.count > 0 ? metric.sum / metric.count : null;
+      });
+
+      return entry;
+    });
+  }, [data, isDateFiltered, latestDataForMetrics]);
 
   const technicianRows = React.useMemo(() => {
     const byTechnician = new Map<
@@ -235,20 +289,24 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
 
   const indicatorDifficulty = React.useMemo(
     () =>
-      indicatorAvgs
-        .filter((indicator) => indicator.count > 0)
-        .map((indicator) => {
-          const foraMeta = indicator.count - indicator.targetHits;
-          const pctForaMeta = indicator.count > 0 ? Number(((foraMeta / indicator.count) * 100).toFixed(1)) : 0;
+      KEYS.map((key) => {
+        const values = difficultyDataForMetrics
+          .map((row) => row[key])
+          .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+        const foraMeta = values.filter((value) => !atingeMeta(key, value)).length;
+        const pctForaMeta = values.length > 0 ? Number(((foraMeta / values.length) * 100).toFixed(1)) : 0;
 
-          return {
-            ...indicator,
-            foraMeta,
-            pctForaMeta,
-          };
-        })
+        return {
+          key,
+          indicador: INDICADOR_LABELS[key],
+          count: values.length,
+          foraMeta,
+          pctForaMeta,
+        };
+      })
+        .filter((indicator) => indicator.count > 0)
         .sort((a, b) => b.pctForaMeta - a.pctForaMeta || b.foraMeta - a.foraMeta),
-    [indicatorAvgs],
+    [difficultyDataForMetrics],
   );
 
   const technicians = new Set(latestDataForMetrics.map((row) => row.login));

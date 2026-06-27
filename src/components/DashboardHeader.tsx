@@ -29,6 +29,8 @@ const navItems = [
   { path: '/comissao-gatilho', label: 'Comissão', icon: BadgeDollarSign, roles: ['admin'] as UserRole[] },
 ];
 
+const adminNavItem = { path: '/admin', label: 'Configurações', icon: ShieldCheck, roles: ['admin'] as UserRole[] };
+
 const DashboardHeader: React.FC = () => {
   const { profile, signOut } = useAuth();
   const { unreadCount } = useNotifications();
@@ -37,6 +39,7 @@ const DashboardHeader: React.FC = () => {
   const location = useLocation();
   const profileRole = profile?.role ?? 'user';
   const visibleNavItems = navItems.filter((item) => item.roles.includes(profileRole));
+  const mobileNavItems = profileRole === 'admin' ? [...visibleNavItems, adminNavItem] : visibleNavItems;
   const roleLabel = profileRole === 'admin' ? 'Administrador' : USER_ROLE_LABELS[profileRole] ?? 'Operação';
 
   const handleChangeCity = () => {
@@ -146,7 +149,7 @@ const DashboardHeader: React.FC = () => {
 
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85 lg:ml-56">
         <div className="flex min-h-16 flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-6">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center justify-between gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground lg:hidden">
               <BarChart3 className="size-5" />
             </div>
@@ -167,11 +170,43 @@ const DashboardHeader: React.FC = () => {
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">Gestão operacional TechNET</p>
             </div>
+            <div className="ml-auto flex shrink-0 items-center gap-1 lg:hidden">
+              <button
+                type="button"
+                onClick={handleOpenNotifications}
+                className={cn(
+                  'relative flex size-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                  location.pathname === '/perfil' && location.search.includes('notificacoes') && 'bg-muted text-foreground',
+                )}
+                aria-label={`Abrir notificações${unreadCount > 0 ? ` (${unreadCount} não lidas)` : ''}`}
+                title="Abrir notificações"
+              >
+                <Bell className="size-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenProfile}
+                className={cn(
+                  'flex size-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                  location.pathname === '/perfil' && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                )}
+                aria-label="Abrir meu perfil"
+                title="Meu perfil"
+              >
+                <UserRound className="size-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto">
-            <nav className="flex items-center gap-1 rounded-lg border border-border bg-background p-1 lg:hidden" aria-label="Navegação principal">
-              {visibleNavItems.map((item) => {
+          <div className="flex min-w-0 items-stretch gap-2 lg:items-center">
+            <nav className="grid w-full grid-cols-2 gap-1 rounded-lg border border-border bg-background p-1 min-[430px]:grid-cols-3 sm:flex sm:w-auto sm:items-center lg:hidden" aria-label="Navegação principal">
+              {mobileNavItems.map((item) => {
                 const Icon = item.icon;
                 const active = location.pathname === item.path || (item.path === '/dashboard' && location.pathname === '/');
 
@@ -181,14 +216,14 @@ const DashboardHeader: React.FC = () => {
                     type="button"
                     onClick={() => navigate(item.path)}
                     className={cn(
-                      'flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors',
+                      'flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md px-2.5 py-2 text-xs font-semibold transition-colors sm:justify-start sm:px-3',
                       active
                         ? 'bg-primary text-primary-foreground'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     )}
                   >
-                    <Icon className="size-4" />
-                    <span className="whitespace-nowrap">{item.label}</span>
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
                   </button>
                 );
               })}
@@ -197,7 +232,7 @@ const DashboardHeader: React.FC = () => {
             <button
               type="button"
               onClick={handleOpenNotifications}
-              className="relative ml-auto hidden size-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:flex"
+              className="relative ml-auto hidden size-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex"
               aria-label={`Abrir notificações${unreadCount > 0 ? ` (${unreadCount} não lidas)` : ''}`}
               title="Abrir notificações"
             >
@@ -208,7 +243,7 @@ const DashboardHeader: React.FC = () => {
                 </span>
               )}
             </button>
-            <div className="hidden items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-xs text-muted-foreground md:flex">
+            <div className="hidden items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-xs text-muted-foreground lg:flex">
               <RefreshCw className="size-3.5" />
               Atualizado: {updatedAt}
             </div>
