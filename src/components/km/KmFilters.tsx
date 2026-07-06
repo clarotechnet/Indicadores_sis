@@ -24,6 +24,7 @@ interface KmFiltersProps {
   onImport: () => void;
   onManualAdd: () => void;
   canImport?: boolean;
+  lockTechnicianFilter?: boolean;
 }
 
 const KmFilters: React.FC<KmFiltersProps> = ({
@@ -35,6 +36,7 @@ const KmFilters: React.FC<KmFiltersProps> = ({
   onClearFilters,
   onImport,
   canImport = true,
+  lockTechnicianFilter = false,
 }) => {
   const activeCount = [
     filters.dataInicial ? 1 : 0,
@@ -104,6 +106,7 @@ const KmFilters: React.FC<KmFiltersProps> = ({
             selected={filters.tecnicos}
             onChange={(v) => onFilterChange({ ...filters, tecnicos: v })}
             placeholder="Todos os técnicos"
+            disabled={lockTechnicianFilter}
           />
         </div>
 

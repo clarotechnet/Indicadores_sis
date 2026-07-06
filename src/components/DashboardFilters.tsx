@@ -27,6 +27,7 @@ interface DashboardFiltersProps {
   onExportExcel: () => void;
   onImport: () => void;
   canImport?: boolean;
+  lockTechnicianFilter?: boolean;
 }
 
 const DashboardFilters: React.FC<DashboardFiltersProps> = ({
@@ -39,6 +40,7 @@ const DashboardFilters: React.FC<DashboardFiltersProps> = ({
   onExportExcel,
   onImport,
   canImport = true,
+  lockTechnicianFilter = false,
 }) => {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(!isMobile);
@@ -129,6 +131,7 @@ const DashboardFilters: React.FC<DashboardFiltersProps> = ({
           selected={filters.tecnicos}
           onChange={(v) => onFilterChange({ ...filters, tecnicos: v })}
           placeholder="Todos"
+          disabled={lockTechnicianFilter}
         />
       </div>
 

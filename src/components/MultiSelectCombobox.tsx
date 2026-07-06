@@ -9,6 +9,7 @@ interface MultiSelectComboboxProps {
   selected: string[];
   onChange: (selected: string[]) => void;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 const MultiSelectCombobox: React.FC<MultiSelectComboboxProps> = ({
@@ -17,7 +18,8 @@ const MultiSelectCombobox: React.FC<MultiSelectComboboxProps> = ({
   options,
   selected,
   onChange,
-  placeholder = 'Selecionar...'
+  placeholder = 'Selecionar...',
+  disabled = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -51,6 +53,8 @@ const MultiSelectCombobox: React.FC<MultiSelectComboboxProps> = ({
   );
 
   const toggle = (value: string) => {
+    if (disabled) return;
+
     if (selected.includes(value)) {
       onChange(selected.filter((s) => s !== value));
     } else {
@@ -62,6 +66,8 @@ const MultiSelectCombobox: React.FC<MultiSelectComboboxProps> = ({
 
   const removeTag = (value: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (disabled) return;
+
     onChange(selected.filter((s) => s !== value));
   };
 
@@ -70,9 +76,14 @@ const MultiSelectCombobox: React.FC<MultiSelectComboboxProps> = ({
       <div
         className={cn(
           "flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm ring-offset-background cursor-text transition-colors hover:border-primary/40",
-          open && "border-ring ring-2 ring-ring/25"
+          disabled && "cursor-not-allowed bg-muted/50 hover:border-input",
+          open && !disabled && "border-ring ring-2 ring-ring/25"
         )}
-        onClick={() => { setOpen(true); inputRef.current?.focus(); }}
+        onClick={() => {
+          if (disabled) return;
+          setOpen(true);
+          inputRef.current?.focus();
+        }}
       >
         {selected.map((s) => (
           <span
@@ -80,31 +91,40 @@ const MultiSelectCombobox: React.FC<MultiSelectComboboxProps> = ({
             className="inline-flex max-w-[130px] items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary"
           >
             <span className="truncate">{s}</span>
-            <button
-              type="button"
-              aria-label={`Remover ${s}`}
-              onClick={(e) => removeTag(s, e)}
-              className="shrink-0 cursor-pointer rounded-sm hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X className="size-3" />
-            </button>
+            {!disabled && (
+              <button
+                type="button"
+                aria-label={`Remover ${s}`}
+                onClick={(e) => removeTag(s, e)}
+                className="shrink-0 cursor-pointer rounded-sm hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X className="size-3" />
+              </button>
+            )}
           </span>
         ))}
         <input
           id={id}
           ref={inputRef}
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            if (disabled) return;
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => {
+            if (!disabled) setOpen(true);
+          }}
           placeholder={selected.length === 0 ? placeholder : ''}
           aria-label={ariaLabel ?? placeholder}
           aria-expanded={open}
+          disabled={disabled}
           className="min-w-[72px] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
-        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && !disabled && "rotate-180")} />
       </div>
 
-      {open && (
+      {open && !disabled && (
         <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">Nenhum resultado</div>

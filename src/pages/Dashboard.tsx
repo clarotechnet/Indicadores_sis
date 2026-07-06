@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
+import { formatDatePtBr, getCurrentMonthDateRange } from '@/lib/dateFilters';
 import { supabase } from '@/lib/supabase';
 import type { DadoTecnico, HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
 import { INDICADOR_LABELS } from '@/types/database';
@@ -38,6 +39,26 @@ const normalizeLogin = (login: string) => login.trim().toUpperCase();
 
 const sameItems = (a: string[], b: string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
 
+const createEmptyFilters = (): DashboardFilterState => ({
+  tecnicos: [],
+  supervisores: [],
+  dataInicial: '',
+  dataFinal: '',
+  busca: '',
+});
+
+const createTechnicianFilters = (tecnico = ''): DashboardFilterState => {
+  const range = getCurrentMonthDateRange();
+
+  return {
+    tecnicos: tecnico ? [tecnico] : [],
+    supervisores: [],
+    dataInicial: range.dataInicial,
+    dataFinal: range.dataFinal,
+    busca: '',
+  };
+};
+
 const Dashboard = () => {
   const { selectedCity } = useCity();
   const { profile } = useAuth();
@@ -54,13 +75,9 @@ const Dashboard = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(getStoredTab);
-  const [filters, setFilters] = useState<DashboardFilterState>({
-    tecnicos: [],
-    supervisores: [],
-    dataInicial: '',
-    dataFinal: '',
-    busca: '',
-  });
+  const [filters, setFilters] = useState<DashboardFilterState>(() =>
+    isTechnicianDashboard ? createTechnicianFilters() : createEmptyFilters(),
+  );
 
   const fetchData = async () => {
     if (!selectedCity) {
@@ -208,6 +225,7 @@ const Dashboard = () => {
 
   const indicadores = allIndicadores;
   const horarios = allHorarios;
+  const technicianName = isTechnicianDashboard ? activeTechnicians[0]?.nome || '' : '';
 
   const filteredData = useMemo(() => {
     let data = indicadores;
@@ -301,7 +319,50 @@ const Dashboard = () => {
     });
   }, [loadingData, supervisores, tecnicos]);
 
-  const clearFilters = () => setFilters({ tecnicos: [], supervisores: [], dataInicial: '', dataFinal: '', busca: '' });
+  useEffect(() => {
+    if (!isTechnicianDashboard || loadingData) return;
+
+    setFilters((current) => {
+      const defaults = createTechnicianFilters(technicianName);
+      const nextFilters = {
+        ...current,
+        tecnicos: technicianName ? [technicianName] : current.tecnicos,
+        supervisores: [],
+        dataInicial: current.dataInicial || defaults.dataInicial,
+        dataFinal: current.dataFinal || defaults.dataFinal,
+      };
+
+      if (
+        current.dataInicial === nextFilters.dataInicial &&
+        current.dataFinal === nextFilters.dataFinal &&
+        sameItems(current.tecnicos, nextFilters.tecnicos) &&
+        sameItems(current.supervisores, nextFilters.supervisores)
+      ) {
+        return current;
+      }
+
+      return nextFilters;
+    });
+  }, [isTechnicianDashboard, loadingData, technicianName]);
+
+  const applyTechnicianDefaults = (nextFilters: DashboardFilterState): DashboardFilterState => {
+    if (!isTechnicianDashboard) return nextFilters;
+
+    const defaults = createTechnicianFilters(technicianName);
+    return {
+      ...nextFilters,
+      tecnicos: technicianName ? [technicianName] : nextFilters.tecnicos,
+      supervisores: [],
+      dataInicial: nextFilters.dataInicial || defaults.dataInicial,
+      dataFinal: nextFilters.dataFinal || defaults.dataFinal,
+    };
+  };
+
+  const handleFilterChange = (nextFilters: DashboardFilterState) => {
+    setFilters(applyTechnicianDefaults(nextFilters));
+  };
+
+  const clearFilters = () => setFilters(isTechnicianDashboard ? createTechnicianFilters(technicianName) : createEmptyFilters());
 
   const exportCSV = () => {
     const ws = XLSX.utils.json_to_sheet(filteredData);
@@ -322,6 +383,7 @@ const Dashboard = () => {
   };
 
   const isDateFiltered = !!filters.dataInicial || !!filters.dataFinal;
+  const latestDateLabel = latestDate ? formatDatePtBr(latestDate) : '';
 
   if (!selectedCity) {
     return (
@@ -346,19 +408,31 @@ const Dashboard = () => {
         {!loadingData && latestDate && (
           <div className="dashboard-panel flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
             <CalendarDays className="size-4 text-primary" />
-            <span className="font-semibold text-foreground">Último envio no banco</span>
-            <Badge variant="secondary">
-              {new Date(latestDate + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-            </Badge>
-            {!isDateFiltered && (
-              <span className="text-xs text-muted-foreground">Dados recentes por padrão. Gráficos preservam o histórico.</span>
-            )}
-            {isDateFiltered && (
-              <span className="text-xs text-muted-foreground">
-                Período filtrado: {filters.dataInicial ? new Date(filters.dataInicial + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'início'}
-                {' até '}
-                {filters.dataFinal ? new Date(filters.dataFinal + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'fim'}
-              </span>
+            {isTechnicianDashboard ? (
+              <>
+                <span className="font-semibold text-foreground">
+                  Bem-vindo, técnico {technicianName || 'logado'}
+                </span>
+                <Badge variant="secondary">{latestDateLabel}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  Seus indicadores estão atualizados até {latestDateLabel}.
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-foreground">Último envio no banco</span>
+                <Badge variant="secondary">{latestDateLabel}</Badge>
+                {!isDateFiltered && (
+                  <span className="text-xs text-muted-foreground">Dados recentes por padrão. Gráficos preservam o histórico.</span>
+                )}
+                {isDateFiltered && (
+                  <span className="text-xs text-muted-foreground">
+                    Período filtrado: {filters.dataInicial ? formatDatePtBr(filters.dataInicial) : 'início'}
+                    {' até '}
+                    {filters.dataFinal ? formatDatePtBr(filters.dataFinal) : 'fim'}
+                  </span>
+                )}
+              </>
             )}
           </div>
         )}
@@ -367,12 +441,13 @@ const Dashboard = () => {
           tecnicos={tecnicos}
           supervisores={supervisores}
           filters={filters}
-          onFilterChange={setFilters}
+          onFilterChange={handleFilterChange}
           onClearFilters={clearFilters}
           onExportCSV={exportCSV}
           onExportExcel={exportExcel}
           onImport={() => setImportOpen(true)}
           canImport={isAdmin}
+          lockTechnicianFilter={isTechnicianDashboard}
         />
 
         {loadingData ? (

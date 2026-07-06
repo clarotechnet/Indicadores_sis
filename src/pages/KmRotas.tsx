@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, ClipboardCheck, Fuel, Route, ShieldAlert } from 'lucide-react';
+import { AlertCircle, CalendarDays, ClipboardCheck, Fuel, Route, ShieldAlert } from 'lucide-react';
 
 import DashboardHeader from '@/components/DashboardHeader';
 import DashboardLoadingState from '@/components/DashboardLoadingState';
@@ -12,12 +12,36 @@ import KmImportDialog from '@/components/km/KmImportDialog';
 import KmManualDialog from '@/components/km/KmManualDialog';
 import KmMapTab from '@/components/km/KmMapTab';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
+import { formatDatePtBr, getCurrentMonthDateRange } from '@/lib/dateFilters';
 import { isKmServiceOrder } from '@/lib/kmMetrics';
 import { supabase } from '@/lib/supabase';
 import type { DadoTecnico, KmTecnica, TransporteTecnico } from '@/types/database';
+
+const createEmptyFilters = (): KmFilterState => ({
+  dataInicial: '',
+  dataFinal: '',
+  tecnicos: [],
+  frentes: [],
+  supervisores: [],
+});
+
+const createTechnicianFilters = (tecnico = ''): KmFilterState => {
+  const range = getCurrentMonthDateRange();
+
+  return {
+    dataInicial: range.dataInicial,
+    dataFinal: range.dataFinal,
+    tecnicos: tecnico ? [tecnico] : [],
+    frentes: [],
+    supervisores: [],
+  };
+};
+
+const sameItems = (a: string[], b: string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
 
 const KmRotas = () => {
   const { selectedCity } = useCity();
@@ -35,13 +59,9 @@ const KmRotas = () => {
   const [activeTab, setActiveTab] = useState('graficos');
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [filters, setFilters] = useState<KmFilterState>({
-    dataInicial: '',
-    dataFinal: '',
-    tecnicos: [],
-    frentes: [],
-    supervisores: [],
-  });
+  const [filters, setFilters] = useState<KmFilterState>(() =>
+    isTechnician ? createTechnicianFilters() : createEmptyFilters(),
+  );
 
   const fetchKmData = async (): Promise<KmTecnica[]> => {
     if (!selectedCity) return [];
@@ -184,21 +204,28 @@ const KmRotas = () => {
     return data.filter((row) => activeLogins.has(row.login_tecnico?.trim().toUpperCase() || ''));
   }, [data, dadosTecnicos]);
 
+  const latestKmDate = useMemo(
+    () => visibleData.reduce((latest, row) => (row.data > latest ? row.data : latest), ''),
+    [visibleData],
+  );
+  const latestKmDateLabel = latestKmDate ? formatDatePtBr(latestKmDate) : '';
+
   const filteredData = useMemo(() => {
     let d = visibleData;
 
     if (filters.dataInicial) d = d.filter((r) => r.data >= filters.dataInicial);
     if (filters.dataFinal) d = d.filter((r) => r.data <= filters.dataFinal);
-    if (filters.tecnicos.length > 0) d = d.filter((r) => filters.tecnicos.includes(r.recurso));
+    if (!isTechnician && filters.tecnicos.length > 0) d = d.filter((r) => filters.tecnicos.includes(r.recurso));
     if (filters.frentes.length > 0) d = d.filter((r) => filters.frentes.includes(r.frente));
     if (filters.supervisores.length > 0) {
       d = d.filter((r) => filters.supervisores.includes(supervisorMap.get(r.login_tecnico?.toUpperCase() || '') || ''));
     }
 
     return d;
-  }, [filters, supervisorMap, visibleData]);
+  }, [filters, isTechnician, supervisorMap, visibleData]);
 
   const tecnicos = useMemo(() => [...new Set(visibleData.map((d) => d.recurso))].sort(), [visibleData]);
+  const technicianName = isTechnician ? tecnicos[0] || dadosTecnicos[0]?.nome || '' : '';
   const frentes = useMemo(() => [...new Set(visibleData.map((d) => d.frente).filter(Boolean))].sort(), [visibleData]);
 
   const supervisores = useMemo(() => {
@@ -221,7 +248,50 @@ const KmRotas = () => {
     }, 0);
   }, [filteredData, transporteMap]);
 
-  const clearFilters = () => setFilters({ dataInicial: '', dataFinal: '', tecnicos: [], frentes: [], supervisores: [] });
+  useEffect(() => {
+    if (!isTechnician || loadingData) return;
+
+    setFilters((current) => {
+      const defaults = createTechnicianFilters(technicianName);
+      const nextFilters = {
+        ...current,
+        dataInicial: current.dataInicial || defaults.dataInicial,
+        dataFinal: current.dataFinal || defaults.dataFinal,
+        tecnicos: technicianName ? [technicianName] : current.tecnicos,
+        supervisores: [],
+      };
+
+      if (
+        current.dataInicial === nextFilters.dataInicial &&
+        current.dataFinal === nextFilters.dataFinal &&
+        sameItems(current.tecnicos, nextFilters.tecnicos) &&
+        sameItems(current.supervisores, nextFilters.supervisores)
+      ) {
+        return current;
+      }
+
+      return nextFilters;
+    });
+  }, [isTechnician, loadingData, technicianName]);
+
+  const applyTechnicianDefaults = (nextFilters: KmFilterState): KmFilterState => {
+    if (!isTechnician) return nextFilters;
+
+    const defaults = createTechnicianFilters(technicianName);
+    return {
+      ...nextFilters,
+      dataInicial: nextFilters.dataInicial || defaults.dataInicial,
+      dataFinal: nextFilters.dataFinal || defaults.dataFinal,
+      tecnicos: technicianName ? [technicianName] : nextFilters.tecnicos,
+      supervisores: [],
+    };
+  };
+
+  const handleFilterChange = (nextFilters: KmFilterState) => {
+    setFilters(applyTechnicianDefaults(nextFilters));
+  };
+
+  const clearFilters = () => setFilters(isTechnician ? createTechnicianFilters(technicianName) : createEmptyFilters());
   const hasActiveFilters = !!(filters.dataInicial || filters.dataFinal || filters.tecnicos.length > 0 || filters.frentes.length > 0 || filters.supervisores.length > 0);
 
   if (!selectedCity) {
@@ -252,16 +322,30 @@ const KmRotas = () => {
       <DashboardHeader />
 
       <main className="dashboard-container flex flex-col gap-4 sm:gap-5">
+        {!loadingData && isTechnician && latestKmDate && (
+          <div className="dashboard-panel flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
+            <CalendarDays className="size-4 text-primary" />
+            <span className="font-semibold text-foreground">
+              Verifique seu KM, {technicianName || 'técnico'}
+            </span>
+            <Badge variant="secondary">{latestKmDateLabel}</Badge>
+            <span className="text-xs text-muted-foreground">
+              Seu KM está atualizado até {latestKmDateLabel}.
+            </span>
+          </div>
+        )}
+
         <KmFilters
           tecnicos={tecnicos}
           frentes={frentes}
           supervisores={supervisores}
           filters={filters}
-          onFilterChange={setFilters}
+          onFilterChange={handleFilterChange}
           onClearFilters={clearFilters}
           onImport={() => setImportOpen(true)}
           onManualAdd={() => setManualOpen(true)}
           canImport={isAdmin}
+          lockTechnicianFilter={isTechnician}
         />
 
         {loadError && (
