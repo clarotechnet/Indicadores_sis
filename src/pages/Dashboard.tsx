@@ -413,7 +413,7 @@ const Dashboard = () => {
                 <span className="font-semibold text-foreground">
                   Bem-vindo, técnico {technicianName || 'logado'}
                 </span>
-                <Badge variant="secondary">{latestDateLabel}</Badge>
+                {/* <Badge variant="secondary">{latestDateLabel}</Badge> */}
                 <span className="text-xs text-muted-foreground">
                   Seus indicadores estão atualizados até {latestDateLabel}.
                 </span>

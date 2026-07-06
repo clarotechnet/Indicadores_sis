@@ -328,7 +328,7 @@ const KmRotas = () => {
             <span className="font-semibold text-foreground">
               Verifique seu KM, {technicianName || 'técnico'}
             </span>
-            <Badge variant="secondary">{latestKmDateLabel}</Badge>
+            {/* <Badge variant="secondary">{latestKmDateLabel}</Badge> */}
             <span className="text-xs text-muted-foreground">
               Seu KM está atualizado até {latestKmDateLabel}.
             </span>
