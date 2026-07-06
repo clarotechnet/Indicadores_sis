@@ -12,6 +12,7 @@ import ImportDialog from '@/components/ImportDialog';
 import IndicatorTab from '@/components/IndicatorTab';
 import ResumoTab from '@/components/ResumoTab';
 import SupervisorTab from '@/components/SupervisorTab';
+import TecnicoOverview from '@/components/TecnicoOverview';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -43,6 +44,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const technicianLogin = profile?.role === 'tecnico' ? profile.login_tecnico?.trim().toUpperCase() || '' : '';
   const isAdmin = profile?.role === 'admin';
+  const isTechnicianDashboard = profile?.role === 'tecnico' && !!technicianLogin;
 
   const [allIndicadores, setAllIndicadores] = useState<IndicadorTecnico[]>([]);
   const [allHorarios, setAllHorarios] = useState<HorarioPrimeiroCliente[]>([]);
@@ -377,6 +379,13 @@ const Dashboard = () => {
           <DashboardLoadingState
             title="Carregando indicadores"
             description="Buscando os dados da cidade selecionada antes de atualizar os cards e graficos."
+          />
+        ) : isTechnicianDashboard ? (
+          <TecnicoOverview
+            data={filteredData}
+            horarioData={filteredHorarios}
+            cidade={selectedCity || ''}
+            isDateFiltered={isDateFiltered}
           />
         ) : (
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
