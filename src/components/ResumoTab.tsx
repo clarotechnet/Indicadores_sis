@@ -230,7 +230,7 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
           status,
         };
       })
-      .sort((a, b) => b.media - a.media);
+      .sort((a, b) => a.media - b.media);
   }, [latestDataForMetrics]);
 
   const supervisorRows = React.useMemo(() => {
@@ -530,7 +530,7 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
               </TableRow>
             </TableHeader>
             <TableBody>
-              {technicianRows.slice(0, 8).map((row, index) => (
+              {technicianRows.slice(0, 10).map((row, index) => (
                 <TableRow key={row.login}>
                   <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
                   <TableCell>
