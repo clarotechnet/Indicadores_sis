@@ -41,11 +41,21 @@ const formatDate = (date: string) =>
 const formatPercent = (value: number) =>
   `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
-const formatTime = (value?: string) => {
-  if (!value) return '--:--';
-  const [hour = '00', minute = '00'] = value.split(':');
-  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+const timeToMinutes = (value: string) => {
+  const [hour = '0', minute = '0', second = '0'] = value.split(':');
+  return Number(hour) * 60 + Number(minute) + Number(second) / 60;
 };
+
+const minutesToTime = (value: number) => {
+  const totalMinutes = Math.round(value);
+  const hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const HORARIO_IDEAL_START_MINUTES = 7 * 60 + 50;
+const HORARIO_IDEAL_END_MINUTES = 8 * 60 + 15;
 
 const scoreValue = (key: IndicadorKey, value: number) => {
   const meta = INDICADOR_METAS[key];
@@ -126,19 +136,29 @@ const TecnicoOverview: React.FC<TecnicoOverviewProps> = ({
       if (!current || row.data_referencia > current.data_referencia) return row;
       return current;
     }, null);
-    const rowsForStats = isDateFiltered ? horarioData : latest ? [latest] : [];
+    const rowsForStats = horarioData;
     const ideal = rowsForStats.filter((row) => row.classificacao_horario === 'ideal').length;
     const total = rowsForStats.length;
     const pctIdeal = total > 0 ? (ideal / total) * 100 : 0;
+    const averageMinutes =
+      total > 0
+        ? rowsForStats.reduce((sum, row) => sum + timeToMinutes(row.horario_primeiro_cliente), 0) / total
+        : null;
+    const averageIsIdeal =
+      averageMinutes !== null &&
+      averageMinutes >= HORARIO_IDEAL_START_MINUTES &&
+      averageMinutes <= HORARIO_IDEAL_END_MINUTES;
 
     return {
       latest,
       total,
       ideal,
       pctIdeal,
+      averageTime: averageMinutes !== null ? minutesToTime(averageMinutes) : null,
+      averageIsIdeal,
       latestIsIdeal: latest?.classificacao_horario === 'ideal',
     };
-  }, [horarioData, isDateFiltered]);
+  }, [horarioData]);
 
   const indicatorsWithData = indicatorResults.filter((item) => item.value !== null);
   const indicatorsOnTarget = indicatorsWithData.filter((item) => item.inTarget).length;
@@ -243,33 +263,33 @@ const TecnicoOverview: React.FC<TecnicoOverviewProps> = ({
           <CardHeader className="flex flex-row items-start justify-between gap-3 pb-2">
             <div className="min-w-0">
               <CardTitle className="truncate text-sm font-semibold">Horário</CardTitle>
-              <p className="mt-1 text-xs text-muted-foreground">Primeiro cliente</p>
-              <p className="mt-1 text-xs text-muted-foreground">Horário Ideal (07:40..08:15)</p>
+              <p className="mt-1 text-xs text-muted-foreground">Média do primeiro cliente</p>
+              <p className="mt-1 text-xs text-muted-foreground">Horário ideal (07:50..08:15)</p>
             </div>
             <Badge
               variant="secondary"
               className={cn(
                 'shrink-0 border-transparent',
-                !horarioStats.latest && 'bg-muted text-muted-foreground hover:bg-muted',
-                horarioStats.latest &&
-                (horarioStats.latestIsIdeal
+                !hasHorarioData && 'bg-muted text-muted-foreground hover:bg-muted',
+                hasHorarioData &&
+                (horarioStats.averageIsIdeal
                   ? 'bg-success/10 text-success hover:bg-success/10'
                   : 'bg-destructive/10 text-destructive hover:bg-destructive/10'),
               )}
             >
-              {horarioStats.latest ? (horarioStats.latestIsIdeal ? 'Ideal' : 'Abaixo') : 'Sem dados'}
+              {hasHorarioData ? (horarioStats.averageIsIdeal ? 'Média ideal' : 'Média fora') : 'Sem dados'}
             </Badge>
           </CardHeader>
           <CardContent>
             <div className="flex items-end justify-between gap-3">
               <p className="font-display text-3xl font-bold text-foreground">
-                {formatTime(horarioStats.latest?.horario_primeiro_cliente)}
+                {horarioStats.averageTime ?? '--:--'}
               </p>
               <Clock
                 className={cn(
                   'mb-1 size-5',
-                  !horarioStats.latest && 'text-muted-foreground',
-                  horarioStats.latest && (horarioStats.latestIsIdeal ? 'text-success' : 'text-destructive'),
+                  !hasHorarioData && 'text-muted-foreground',
+                  hasHorarioData && (horarioStats.averageIsIdeal ? 'text-success' : 'text-destructive'),
                 )}
               />
             </div>

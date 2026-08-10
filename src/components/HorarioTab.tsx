@@ -1,8 +1,7 @@
 import React from 'react';
 import KPICard from '@/components/KPICard';
-import RankingList from '@/components/RankingList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, PieChart, Pie, Cell } from 'recharts';
+import { CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis } from 'recharts';
 import { Clock, CheckCircle, XCircle, Users } from 'lucide-react';
 import type { HorarioPrimeiroCliente } from '@/types/database';
 
@@ -12,43 +11,92 @@ interface HorarioTabProps {
 }
 
 const horarioParaMinutos = (horario: string): number => {
-  const [h, m, s] = horario.split(':').map(Number);
+  const [h = 0, m = 0, s = 0] = horario.split(':').map(Number);
   return h * 60 + m + s / 60;
 };
 
 const minutosParaHorario = (minutos: number): string => {
-  const h = Math.floor(minutos / 60);
-  const m = Math.floor(minutos % 60);
+  const totalMinutos = Math.round(minutos);
+  const h = Math.floor(totalMinutos / 60);
+  const m = totalMinutos % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
-const HorarioTab: React.FC<HorarioTabProps> = ({ data, isDateFiltered = false }) => {
-  // Deduplicate by login: keep only the latest record per login
-  const latestByLogin = new Map<string, HorarioPrimeiroCliente>();
-  data.forEach((d) => {
-    const existing = latestByLogin.get(d.login);
-    if (!existing || d.data_referencia > existing.data_referencia) {
-      latestByLogin.set(d.login, d);
-    }
-  });
-  const uniqueData = Array.from(latestByLogin.values());
+const HORARIO_IDEAL_INICIO = 7 * 60 + 50;
+const HORARIO_IDEAL_FIM = 8 * 60 + 15 + 59 / 60;
 
-  const ideal = uniqueData.filter((d) => d.classificacao_horario === 'ideal');
-  const ruim = uniqueData.filter((d) => d.classificacao_horario === 'ruim');
-  const totalRecords = uniqueData.length;
+interface HorarioResumo {
+  login: string;
+  nome: string;
+  minutos: number;
+  display: string;
+  classificacao: 'ideal' | 'ruim';
+}
+
+const classificarHorario = (minutos: number): 'ideal' | 'ruim' =>
+  minutos >= HORARIO_IDEAL_INICIO && minutos <= HORARIO_IDEAL_FIM ? 'ideal' : 'ruim';
+
+const HorarioTab: React.FC<HorarioTabProps> = ({ data, isDateFiltered = false }) => {
+  const resumoPorTecnico = React.useMemo<HorarioResumo[]>(() => {
+    if (isDateFiltered) {
+      const byLogin = new Map<string, { nome: string; totalMinutos: number; registros: number }>();
+
+      data.forEach((d) => {
+        const minutos = horarioParaMinutos(d.horario_primeiro_cliente);
+        if (!Number.isFinite(minutos)) return;
+
+        const existing = byLogin.get(d.login) || { nome: d.tecnico, totalMinutos: 0, registros: 0 };
+        existing.nome = d.tecnico || existing.nome;
+        existing.totalMinutos += minutos;
+        existing.registros += 1;
+        byLogin.set(d.login, existing);
+      });
+
+      return Array.from(byLogin.entries()).map(([login, item]) => {
+        const minutos = item.totalMinutos / item.registros;
+        return {
+          login,
+          nome: item.nome,
+          minutos,
+          display: minutosParaHorario(minutos),
+          classificacao: classificarHorario(minutos),
+        };
+      });
+    }
+
+    const latestByLogin = new Map<string, HorarioPrimeiroCliente>();
+    data.forEach((d) => {
+      const existing = latestByLogin.get(d.login);
+      if (!existing || d.data_referencia > existing.data_referencia) {
+        latestByLogin.set(d.login, d);
+      }
+    });
+
+    return Array.from(latestByLogin.values()).flatMap((d) => {
+      const minutos = horarioParaMinutos(d.horario_primeiro_cliente);
+      if (!Number.isFinite(minutos)) return [];
+
+      return [{
+        login: d.login,
+        nome: d.tecnico,
+        minutos,
+        display: minutosParaHorario(minutos),
+        classificacao: d.classificacao_horario,
+      }];
+    });
+  }, [data, isDateFiltered]);
+
+  const ideal = resumoPorTecnico.filter((d) => d.classificacao === 'ideal');
+  const ruim = resumoPorTecnico.filter((d) => d.classificacao === 'ruim');
+  const totalRecords = resumoPorTecnico.length;
   const pctIdeal = totalRecords > 0 ? (ideal.length / totalRecords) * 100 : 0;
   const pctRuim = totalRecords > 0 ? (ruim.length / totalRecords) * 100 : 0;
 
-  const byTecnico: Record<string, { minutos: number; nome: string }> = {};
-  uniqueData.forEach((d) => {
-    byTecnico[d.login] = { minutos: horarioParaMinutos(d.horario_primeiro_cliente), nome: d.tecnico };
-  });
-
-  const rankings = Object.values(byTecnico)
+  const rankings = resumoPorTecnico
     .map((t) => ({ 
       nome: t.nome, 
       valor: t.minutos,
-      display: minutosParaHorario(t.minutos)
+      display: t.display,
     }))
     .sort((a, b) => a.valor - b.valor);
 
@@ -85,8 +133,8 @@ const HorarioTab: React.FC<HorarioTabProps> = ({ data, isDateFiltered = false })
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <RankingListHorario title="Top 5 - Mais Cedo" items={top5} type="best" />
-        <RankingListHorario title="Bottom 5 - Mais Tarde" items={bottom5} type="worst" />
+        <RankingListHorario title={isDateFiltered ? 'Top 5 - Média Mais Cedo' : 'Top 5 - Mais Cedo'} items={top5} type="best" />
+        <RankingListHorario title={isDateFiltered ? 'Bottom 5 - Média Mais Tarde' : 'Bottom 5 - Mais Tarde'} items={bottom5} type="worst" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
