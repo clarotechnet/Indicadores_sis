@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, CalendarDays, ClipboardCheck, Fuel, Route, ShieldAlert } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 import DashboardHeader from '@/components/DashboardHeader';
 import DashboardLoadingState from '@/components/DashboardLoadingState';
@@ -18,12 +19,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
 import { formatDatePtBr, getCurrentMonthDateRange } from '@/lib/dateFilters';
 import { isKmServiceOrder } from '@/lib/kmMetrics';
+import { fetchKmMapRows, fetchKmSummaryRows, shouldRetryKmQuery } from '@/lib/kmQueries';
 import { supabase } from '@/lib/supabase';
 import type { DadoTecnico, KmTecnica, TransporteTecnico } from '@/types/database';
 
-const createEmptyFilters = (): KmFilterState => ({
-  dataInicial: '',
-  dataFinal: '',
+const createDefaultFilters = (): KmFilterState => ({
+  ...getCurrentMonthDateRange(),
   tecnicos: [],
   frentes: [],
   supervisores: [],
@@ -42,6 +43,9 @@ const createTechnicianFilters = (tecnico = ''): KmFilterState => {
 };
 
 const sameItems = (a: string[], b: string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
+const EMPTY_KM_ROWS: KmTecnica[] = [];
+const EMPTY_TRANSPORTES: TransporteTecnico[] = [];
+const EMPTY_DADOS_TECNICOS: DadoTecnico[] = [];
 
 const KmRotas = () => {
   const { selectedCity } = useCity();
@@ -51,139 +55,87 @@ const KmRotas = () => {
   const isTechnician = profile?.role === 'tecnico';
   const technicianLogin = isTechnician ? profile?.login_tecnico?.trim().toUpperCase() || '' : '';
 
-  const [data, setData] = useState<KmTecnica[]>([]);
-  const [transportes, setTransportes] = useState<TransporteTecnico[]>([]);
   const [importOpen, setImportOpen] = useState(false);
-  const [dadosTecnicos, setDadosTecnicos] = useState<DadoTecnico[]>([]);
   const [manualOpen, setManualOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('graficos');
-  const [loadingData, setLoadingData] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [filters, setFilters] = useState<KmFilterState>(() =>
-    isTechnician ? createTechnicianFilters() : createEmptyFilters(),
+    isTechnician ? createTechnicianFilters() : createDefaultFilters(),
   );
 
-  const fetchKmData = async (): Promise<KmTecnica[]> => {
-    if (!selectedCity) return [];
+  const canLoad = Boolean(
+    selectedCity &&
+    (isAdmin || isTechnician) &&
+    (!isTechnician || technicianLogin),
+  );
 
-    let allRows: KmTecnica[] = [];
-    let from = 0;
-    const pageSize = 1000;
-    let keepFetching = true;
+  const kmQuery = useQuery<KmTecnica[], Error>({
+    queryKey: ['km-tecnica-resumo', selectedCity, technicianLogin, filters.dataInicial, filters.dataFinal],
+    queryFn: ({ signal }) => fetchKmSummaryRows({
+      cidade: selectedCity!,
+      dataInicial: filters.dataInicial,
+      dataFinal: filters.dataFinal,
+      loginTecnico: technicianLogin || undefined,
+      signal,
+    }),
+    enabled: canLoad,
+    staleTime: 60_000,
+    retry: shouldRetryKmQuery,
+  });
 
-    while (keepFetching) {
+  const transportesQuery = useQuery<TransporteTecnico[], Error>({
+    queryKey: ['transporte-tecnico-km', technicianLogin],
+    queryFn: async ({ signal }) => {
       let query = supabase
-        .from('km_tecnica')
-        .select('*')
-        .eq('cidade', selectedCity);
+        .from('transporte_tecnico')
+        .select('id,login,nome,transporte');
 
-      if (technicianLogin) {
-        query = query.eq('login_tecnico', technicianLogin);
-      }
+      if (technicianLogin) query = query.eq('login', technicianLogin);
+      query = query.abortSignal(signal);
 
-      const { data: rows, error } = await query
-        .range(from, from + pageSize - 1);
+      const { data: rows, error } = await query;
+      if (error) throw new Error(`Erro ao buscar transporte_tecnico: ${error.message}`);
 
-      if (error) {
-        throw new Error(`Erro ao buscar km_tecnica: ${error.message}`);
-      }
+      return (rows as TransporteTecnico[]) || [];
+    },
+    enabled: canLoad,
+    staleTime: 5 * 60_000,
+    retry: shouldRetryKmQuery,
+  });
 
-      const fetched = (rows as KmTecnica[]) || [];
-      allRows = [...allRows, ...fetched];
+  const dadosTecnicosQuery = useQuery<DadoTecnico[], Error>({
+    queryKey: ['dados-tecnicos-km', selectedCity, technicianLogin],
+    queryFn: async ({ signal }) => {
+      let query = supabase
+        .from('dados_tecnicos')
+        .select('login,nome,cidade,supervisor,ativo')
+        .eq('cidade', selectedCity!)
+        .eq('ativo', true);
 
-      if (fetched.length < pageSize) {
-        keepFetching = false;
-      } else {
-        from += pageSize;
-      }
-    }
+      if (technicianLogin) query = query.eq('login', technicianLogin);
+      query = query.abortSignal(signal);
 
-    return allRows;
-  };
+      const { data: rows, error } = await query;
+      if (error) throw new Error(`Erro ao buscar dados_tecnicos: ${error.message}`);
 
-  const fetchTransportes = async (): Promise<TransporteTecnico[]> => {
-    let query = supabase.from('transporte_tecnico').select('*');
+      return (rows as DadoTecnico[]) || [];
+    },
+    enabled: canLoad,
+    staleTime: 5 * 60_000,
+    retry: shouldRetryKmQuery,
+  });
 
-    if (technicianLogin) {
-      query = query.eq('login', technicianLogin);
-    }
-
-    const { data: rows, error } = await query;
-
-    if (error) {
-      throw new Error(`Erro ao buscar transporte_tecnico: ${error.message}`);
-    }
-
-    return (rows as TransporteTecnico[]) || [];
-  };
-
-  const fetchDadosTecnicos = async (): Promise<DadoTecnico[]> => {
-    if (!selectedCity) return [];
-
-    let query = supabase
-      .from('dados_tecnicos')
-      .select('*')
-      .eq('cidade', selectedCity)
-      .eq('ativo', true);
-
-    if (technicianLogin) {
-      query = query.eq('login', technicianLogin);
-    }
-
-    const { data: rows, error } = await query;
-
-    if (error) {
-      throw new Error(`Erro ao buscar dados_tecnicos: ${error.message}`);
-    }
-
-    return (rows as DadoTecnico[]) || [];
-  };
-
-  const loadData = async () => {
-    if (!selectedCity) {
-      setLoadingData(false);
-      return;
-    }
-    if (isTechnician && !technicianLogin) {
-      setData([]);
-      setTransportes([]);
-      setDadosTecnicos([]);
-      setLoadError('Seu perfil técnico ainda não tem login vinculado. Peça para um administrador ajustar seu cadastro.');
-      setLoadingData(false);
-      return;
-    }
-
-    setLoadError('');
-    setLoadingData(true);
-
-    try {
-      const [kmRows, transporteRows, tecnicoRows] = await Promise.all([
-        fetchKmData(),
-        fetchTransportes(),
-        fetchDadosTecnicos(),
-      ]);
-
-      setData(kmRows);
-      setTransportes(transporteRows);
-      setDadosTecnicos(tecnicoRows);
-    } catch (error) {
-      setData([]);
-      setTransportes([]);
-      setDadosTecnicos([]);
-      setLoadError(error instanceof Error ? error.message : 'Erro ao carregar dados de KM.');
-    } finally {
-      setLoadingData(false);
-    }
-  };
+  const data = kmQuery.data ?? EMPTY_KM_ROWS;
+  const transportes = transportesQuery.data ?? EMPTY_TRANSPORTES;
+  const dadosTecnicos = dadosTecnicosQuery.data ?? EMPTY_DADOS_TECNICOS;
+  const loadingData = canLoad && (kmQuery.isPending || transportesQuery.isPending || dadosTecnicosQuery.isPending);
+  const queryError = kmQuery.error || transportesQuery.error || dadosTecnicosQuery.error;
+  const loadError = isTechnician && !technicianLogin
+    ? 'Seu perfil técnico ainda não tem login vinculado. Peça para um administrador ajustar seu cadastro.'
+    : queryError?.message || '';
 
   useEffect(() => {
-    if (!selectedCity) {
-      navigate('/selecionar-cidade', { replace: true });
-      return;
-    }
-
-    loadData();
-  }, [selectedCity, profile?.role, profile?.login_tecnico]);
+    if (!selectedCity) navigate('/selecionar-cidade', { replace: true });
+  }, [navigate, selectedCity]);
 
   const transporteMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -236,6 +188,43 @@ const KmRotas = () => {
     });
     return [...set].sort();
   }, [supervisorMap, visibleData]);
+
+  const mapLogins = useMemo(
+    () => [...new Set(filteredData.map((row) => row.login_tecnico).filter(Boolean))].sort(),
+    [filteredData],
+  );
+
+  const shouldLoadMap = canLoad && activeTab === 'mapa' && filters.tecnicos.length > 0 && mapLogins.length > 0;
+  const mapQuery = useQuery<KmTecnica[], Error>({
+    queryKey: [
+      'km-tecnica-mapa',
+      selectedCity,
+      filters.dataInicial,
+      filters.dataFinal,
+      mapLogins,
+      filters.frentes,
+    ],
+    queryFn: ({ signal }) => fetchKmMapRows({
+      cidade: selectedCity!,
+      dataInicial: filters.dataInicial,
+      dataFinal: filters.dataFinal,
+      loginTecnico: technicianLogin || undefined,
+      logins: mapLogins,
+      frentes: filters.frentes,
+      signal,
+    }),
+    enabled: shouldLoadMap,
+    staleTime: 5 * 60_000,
+    retry: shouldRetryKmQuery,
+  });
+
+  const mapData = mapQuery.data ?? EMPTY_KM_ROWS;
+
+  const loadData = async () => {
+    const requests = [kmQuery.refetch(), transportesQuery.refetch(), dadosTecnicosQuery.refetch()];
+    if (shouldLoadMap) requests.push(mapQuery.refetch());
+    await Promise.all(requests);
+  };
 
   const totalKm = useMemo(() => filteredData.reduce((s, d) => s + (d.distancia_km || 0), 0), [filteredData]);
   const totalOS = useMemo(() => filteredData.filter(isKmServiceOrder).length, [filteredData]);
@@ -291,7 +280,7 @@ const KmRotas = () => {
     setFilters(applyTechnicianDefaults(nextFilters));
   };
 
-  const clearFilters = () => setFilters(isTechnician ? createTechnicianFilters(technicianName) : createEmptyFilters());
+  const clearFilters = () => setFilters(isTechnician ? createTechnicianFilters(technicianName) : createDefaultFilters());
   const hasActiveFilters = !!(filters.dataInicial || filters.dataFinal || filters.tecnicos.length > 0 || filters.frentes.length > 0 || filters.supervisores.length > 0);
 
   if (!selectedCity) {
@@ -380,7 +369,20 @@ const KmRotas = () => {
                 <KmChartsTab data={filteredData} transporteMap={transporteMap} hasActiveFilters={hasActiveFilters} />
               </TabsContent>
               <TabsContent value="mapa" className="mt-4">
-                <KmMapTab data={filteredData} selectedTecnicos={filters.tecnicos} />
+                {mapQuery.isFetching && mapData.length === 0 ? (
+                  <DashboardLoadingState
+                    cards={1}
+                    title="Carregando mapa"
+                    description="Buscando apenas as coordenadas do período e dos técnicos selecionados."
+                  />
+                ) : mapQuery.error ? (
+                  <Alert variant="destructive">
+                    <AlertCircle className="size-4" />
+                    <AlertDescription>{mapQuery.error.message}</AlertDescription>
+                  </Alert>
+                ) : (
+                  <KmMapTab data={mapData} selectedTecnicos={filters.tecnicos} />
+                )}
               </TabsContent>
               <TabsContent value="dados" className="mt-4">
                 <KmDataTab data={filteredData} transporteMap={transporteMap} />

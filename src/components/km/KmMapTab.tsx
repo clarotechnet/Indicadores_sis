@@ -26,6 +26,14 @@ const ROUTE_COLORS = [
   '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1',
 ];
 
+const ROUTE_CACHE_LIMIT = 750;
+const routeGeometryCache = new Map<string, [number, number][]>();
+
+const getRouteCacheKey = (
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+) => [from.lat, from.lng, to.lat, to.lng].map((value) => value.toFixed(6)).join(':');
+
 const normalizeRouteText = (value?: string | null) =>
   (value || '')
     .normalize('NFD')
@@ -57,11 +65,17 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
   // Get route geometry between two coordinate pairs
   const getRoute = useCallback(async (
     from: { lat: number; lng: number },
-    to: { lat: number; lng: number }
-): Promise<[number, number][]> => {
+    to: { lat: number; lng: number },
+    signal: AbortSignal,
+  ): Promise<[number, number][]> => {
+    const cacheKey = getRouteCacheKey(from, to);
+    const cachedGeometry = routeGeometryCache.get(cacheKey);
+    if (cachedGeometry) return cachedGeometry;
+
     try {
       const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
         method: 'POST',
+        signal,
         headers: {
           'Authorization': ORS_API_KEY,
           'Content-Type': 'application/json',
@@ -70,13 +84,21 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
           coordinates: [[from.lng, from.lat], [to.lng, to.lat]],
         }),
       });
+      if (!res.ok) throw new Error(`OpenRouteService respondeu ${res.status}`);
+
       const json = await res.json();
       if (json.features && json.features.length > 0) {
-        return json.features[0].geometry.coordinates.map(
+        const geometry = json.features[0].geometry.coordinates.map(
           (c: [number, number]) => [c[1], c[0]] as [number, number]
         );
+        if (routeGeometryCache.size >= ROUTE_CACHE_LIMIT) {
+          const oldestKey = routeGeometryCache.keys().next().value;
+          if (oldestKey) routeGeometryCache.delete(oldestKey);
+        }
+        routeGeometryCache.set(cacheKey, geometry);
+        return geometry;
       }
-    } catch (e) {
+    } catch {
       // Silently fall back to straight line
     }
     return [[from.lat, from.lng], [to.lat, to.lng]];
@@ -111,6 +133,7 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
 
     const process = async () => {
       setLoading(true);
@@ -142,7 +165,8 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
 
         const geometry = await getRoute(
           { lat: fromLat, lng: fromLng },
-          { lat: toLat, lng: toLng }
+          { lat: toLat, lng: toLng },
+          controller.signal,
         );
 
         if (cancelled) return;
@@ -178,6 +202,7 @@ const KmMapTab: React.FC<KmMapTabProps> = ({ data, selectedTecnicos }) => {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [data, getRoute, shouldTraceRoutes]);
 

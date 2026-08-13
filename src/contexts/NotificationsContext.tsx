@@ -68,7 +68,7 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [refreshNotifications]);
 
   useEffect(() => {
-    if (!profileId) return undefined;
+    if (!profileId || !notificationTableAvailable) return undefined;
 
     const channel = supabase
       .channel(`app-notifications-${profileId}`)
@@ -87,7 +87,7 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [profileId, profileRole, refreshNotifications]);
+  }, [notificationTableAvailable, profileId, profileRole, refreshNotifications]);
 
   const unreadCount = useMemo(() => {
     const readSet = new Set(readKeys);

@@ -27,6 +27,9 @@ const normalizeTechnicianLogin = (value?: string | null) => {
   return normalized || null;
 };
 
+const isInvalidRefreshToken = (error: AuthError | null) =>
+  Boolean(error && /invalid refresh token|refresh token not found/i.test(error.message));
+
 const buildPendingProfile = (authUser: User, solicitacao?: SolicitacaoAcesso | null): Profile => ({
   id: authUser.id,
   nome: String(solicitacao?.nome ?? authUser.user_metadata?.nome ?? authUser.email?.split('@')[0] ?? 'Usuário'),
@@ -159,7 +162,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     );
 
-    supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: currentSession }, error }) => {
+      if (isInvalidRefreshToken(error)) {
+        await supabase.auth.signOut({ scope: 'local' });
+        setSession(null);
+        setUser(null);
+        updateProfile(null);
+        setLoading(false);
+        return;
+      }
+
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
 

@@ -11,20 +11,27 @@ import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import Login from "./pages/Login";
 import Cadastro from "./pages/Cadastro";
 import SelecionarCidade from "./pages/SelecionarCidade";
-import Dashboard from "./pages/Dashboard";
-import KmRotas from "./pages/KmRotas";
-import ExcessoMiscelaneas from "./pages/ExcessoMiscelaneas";
-import ComissaoGatilho from "./pages/ComissaoGatilho";
-import Admin from "./pages/Admin";
-import Perfil from "./pages/Perfil";
 import NotFound from "./pages/NotFound";
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Loader2, LogOut, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ResetPasswordPage from './pages/ResetPasswordPage';
 
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const KmRotas = lazy(() => import('./pages/KmRotas'));
+const ExcessoMiscelaneas = lazy(() => import('./pages/ExcessoMiscelaneas'));
+const ComissaoGatilho = lazy(() => import('./pages/ComissaoGatilho'));
+const Admin = lazy(() => import('./pages/Admin'));
+const Perfil = lazy(() => import('./pages/Perfil'));
+
 const queryClient = new QueryClient();
+
+const RouteLoading = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, profile, loading, profileLoading, signOut } = useAuth();
@@ -87,24 +94,26 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <CityProvider>
             <NotificationsProvider>
-              <Routes>
-                <Route path="/" element={<Navigate to="/login" replace />} />
-                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-                <Route path="/reset-password" element={<ResetPasswordPage />} />
-                <Route path="/cadastro" element={<PublicRoute><Cadastro /></PublicRoute>} />
-                <Route path="/selecionar-cidade" element={<ProtectedRoute><SelecionarCidade /></ProtectedRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/km-rotas" element={<ProtectedRoute><KmRotas /></ProtectedRoute>} />
-                <Route path="/excesso-miscelaneas" element={<ProtectedRoute><ExcessoMiscelaneas /></ProtectedRoute>} />
-                <Route path="/comissao-gatilho" element={<ProtectedRoute><ComissaoGatilho /></ProtectedRoute>} />
-                <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
-                <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
+              <Suspense fallback={<RouteLoading />}>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/login" replace />} />
+                  <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
+                  <Route path="/cadastro" element={<PublicRoute><Cadastro /></PublicRoute>} />
+                  <Route path="/selecionar-cidade" element={<ProtectedRoute><SelecionarCidade /></ProtectedRoute>} />
+                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/km-rotas" element={<ProtectedRoute><KmRotas /></ProtectedRoute>} />
+                  <Route path="/excesso-miscelaneas" element={<ProtectedRoute><ExcessoMiscelaneas /></ProtectedRoute>} />
+                  <Route path="/comissao-gatilho" element={<ProtectedRoute><ComissaoGatilho /></ProtectedRoute>} />
+                  <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
+                  <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
             </NotificationsProvider>
           </CityProvider>
         </AuthProvider>

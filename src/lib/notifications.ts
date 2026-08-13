@@ -45,6 +45,7 @@ const isMissingNotificationTable = (error: { code?: string; message?: string } |
   Boolean(
     error &&
       (error.code === '42P01' ||
+        error.code === 'PGRST205' ||
         error.message?.toLowerCase().includes('notificacoes') ||
         error.message?.toLowerCase().includes('notifications')),
   );
