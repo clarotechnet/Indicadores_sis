@@ -116,9 +116,16 @@ const SupervisorManagementTab = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [savingTecnicoKey, setSavingTecnicoKey] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [supervisorDialogOpen, setSupervisorDialogOpen] = useState(false);
   const [savingSupervisor, setSavingSupervisor] = useState(false);
   const [novoSupervisorNome, setNovoSupervisorNome] = useState('');
+  const [technicianDialogOpen, setTechnicianDialogOpen] = useState(false);
+  const [savingNewTechnician, setSavingNewTechnician] = useState(false);
+  const [newTechnician, setNewTechnician] = useState({
+    login: '',
+    nome: '',
+    supervisorId: '',
+  });
   const [search, setSearch] = useState('');
   const [supervisorFiltroId, setSupervisorFiltroId] = useState(ALL_FILTER);
 
@@ -236,7 +243,74 @@ const SupervisorManagementTab = () => {
 
   const openNewSupervisorDialog = () => {
     setNovoSupervisorNome('');
-    setDialogOpen(true);
+    setSupervisorDialogOpen(true);
+  };
+
+  const openNewTechnicianDialog = () => {
+    setNewTechnician({ login: '', nome: '', supervisorId: '' });
+    setTechnicianDialogOpen(true);
+  };
+
+  const createTechnician = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const login = normalize(newTechnician.login);
+    const nome = normalize(newTechnician.nome);
+    const supervisor = supervisores.find((item) => String(item.id) === newTechnician.supervisorId);
+
+    if (!login || !nome) {
+      toast.error('Informe o login e o nome do técnico.');
+      return;
+    }
+
+    if (!supervisor) {
+      toast.error('Selecione o supervisor do técnico.');
+      return;
+    }
+
+    if (!selectedCity) {
+      toast.error('Selecione uma cidade antes de cadastrar um técnico.');
+      return;
+    }
+
+    const alreadyExists = tecnicos.some((tecnico) => (
+      normalize(tecnico.cidade) === normalize(selectedCity)
+      && normalize(tecnico.login) === login
+    ));
+
+    if (alreadyExists) {
+      toast.error('Esse login já está cadastrado na cidade selecionada.');
+      return;
+    }
+
+    setSavingNewTechnician(true);
+    const { data, error } = await supabase
+      .from('dados_tecnicos')
+      .insert({
+        login,
+        nome,
+        supervisor: supervisor.nome,
+        cidade: selectedCity,
+        ativo: true,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      toast.error(error.code === '23505'
+        ? 'Esse login já está cadastrado na cidade selecionada.'
+        : `Não foi possível cadastrar o técnico: ${error.message}`);
+      setSavingNewTechnician(false);
+      return;
+    }
+
+    setTecnicos((current) => [...current, data as DadoTecnico]
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
+    setSearch('');
+    setSupervisorFiltroId(ALL_FILTER);
+    setTechnicianDialogOpen(false);
+    setSavingNewTechnician(false);
+    toast.success('Técnico cadastrado e disponível nos indicadores.');
   };
 
   const createSupervisor = async (event: React.FormEvent) => {
@@ -271,7 +345,7 @@ const SupervisorManagementTab = () => {
     setSupervisores((current) => [...current, data as Supervisor]
       .sort((a, b) => `${a.cidade}-${a.nome}`.localeCompare(`${b.cidade}-${b.nome}`, 'pt-BR')));
     setSupervisorFiltroId(ALL_FILTER);
-    setDialogOpen(false);
+    setSupervisorDialogOpen(false);
     setSavingSupervisor(false);
     toast.success('Supervisor cadastrado e disponível nas opções.');
   };
@@ -296,6 +370,10 @@ const SupervisorManagementTab = () => {
               <Button type="button" variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>
                 <RefreshCw data-icon="inline-start" className={loading ? 'animate-spin' : undefined} />
                 Atualizar
+              </Button>
+              <Button type="button" size="sm" onClick={openNewTechnicianDialog} disabled={!selectedCity}>
+                <UserPlus data-icon="inline-start" />
+                Técnico
               </Button>
               <Button type="button" size="sm" onClick={openNewSupervisorDialog} disabled={!selectedCity}>
                 <Plus data-icon="inline-start" />
@@ -436,7 +514,95 @@ const SupervisorManagementTab = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={technicianDialogOpen} onOpenChange={setTechnicianDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="size-5 text-primary" />
+              Adicionar técnico
+            </DialogTitle>
+            <DialogDescription>
+              O técnico será cadastrado como ativo na cidade selecionada.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={createTechnician} className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="novo-tecnico-login">Login</Label>
+                <Input
+                  id="novo-tecnico-login"
+                  value={newTechnician.login}
+                  onChange={(event) => setNewTechnician((current) => ({ ...current, login: event.target.value }))}
+                  placeholder="Z498116"
+                  autoComplete="off"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="novo-tecnico-cidade">Cidade</Label>
+                <Input id="novo-tecnico-cidade" value={selectedCity ?? ''} disabled />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="novo-tecnico-nome">Nome completo</Label>
+              <Input
+                id="novo-tecnico-nome"
+                value={newTechnician.nome}
+                onChange={(event) => setNewTechnician((current) => ({ ...current, nome: event.target.value }))}
+                placeholder="NOME COMPLETO DO TÉCNICO"
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="novo-tecnico-supervisor">Supervisor</Label>
+              <Select
+                value={newTechnician.supervisorId}
+                onValueChange={(supervisorId) => setNewTechnician((current) => ({ ...current, supervisorId }))}
+              >
+                <SelectTrigger id="novo-tecnico-supervisor">
+                  <SelectValue placeholder="Selecionar supervisor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Supervisores de {selectedCity}</SelectLabel>
+                    {supervisores.map((supervisor) => (
+                      <SelectItem key={supervisor.id} value={String(supervisor.id)}>
+                        {supervisor.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {supervisores.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Cadastre primeiro um supervisor para esta cidade.
+                </p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTechnicianDialogOpen(false)}
+                disabled={savingNewTechnician}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={savingNewTechnician || supervisores.length === 0}>
+                {savingNewTechnician && <Loader2 data-icon="inline-start" className="animate-spin" />}
+                Salvar técnico
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={supervisorDialogOpen} onOpenChange={setSupervisorDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -466,7 +632,7 @@ const SupervisorManagementTab = () => {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={savingSupervisor}>
+              <Button type="button" variant="outline" onClick={() => setSupervisorDialogOpen(false)} disabled={savingSupervisor}>
                 Cancelar
               </Button>
               <Button type="submit" disabled={savingSupervisor}>
