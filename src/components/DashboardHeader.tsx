@@ -25,7 +25,7 @@ import { USER_ROLE_LABELS, type UserRole } from '@/types/database';
 const navItems = [
   { path: '/dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: ['admin', 'user', 'tecnico'] as UserRole[] },
   { path: '/km-rotas', label: 'KM Rotas', icon: Route, roles: ['admin', 'tecnico'] as UserRole[] },
-  { path: '/excesso-miscelaneas', label: 'Miscelâneas', icon: PackageOpen, roles: ['admin'] as UserRole[] },
+  // { path: '/excesso-miscelaneas', label: 'Miscelâneas', icon: PackageOpen, roles: ['admin'] as UserRole[] },
   { path: '/comissao-gatilho', label: 'Comissão', icon: BadgeDollarSign, roles: ['admin'] as UserRole[] },
 ];
 
