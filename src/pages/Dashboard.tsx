@@ -460,7 +460,6 @@ const Dashboard = () => {
             data={filteredData}
             horarioData={filteredHorarios}
             cidade={selectedCity || ''}
-            isDateFiltered={isDateFiltered}
           />
         ) : (
           <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">

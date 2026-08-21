@@ -12,7 +12,6 @@ interface TecnicoOverviewProps {
   data: IndicadorTecnico[];
   horarioData: HorarioPrimeiroCliente[];
   cidade: string;
-  isDateFiltered?: boolean;
 }
 
 type IndicatorResult = {
@@ -84,18 +83,15 @@ const TecnicoOverview: React.FC<TecnicoOverviewProps> = ({
   data,
   horarioData,
   cidade,
-  isDateFiltered = false,
 }) => {
   const tecnico = data[0]?.tecnico ?? horarioData[0]?.tecnico ?? 'Tecnico';
 
   const indicatorResults = React.useMemo<IndicatorResult[]>(
     () =>
       TECH_INDICATOR_KEYS.map((key) => {
-        const values = data
-          .map((row) => row[key])
-          .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+        const latest = latestRowForKey(data, key);
 
-        if (values.length === 0) {
+        if (!latest) {
           return {
             key,
             label: INDICADOR_LABELS[key],
@@ -108,27 +104,20 @@ const TecnicoOverview: React.FC<TecnicoOverviewProps> = ({
           };
         }
 
-        const latest = latestRowForKey(data, key);
-        const value = isDateFiltered
-          ? values.reduce((sum, item) => sum + item, 0) / values.length
-          : (latest?.[key] as number);
+        const value = latest[key] as number;
 
         return {
           key,
           label: INDICADOR_LABELS[key],
           value,
-          count: values.length,
-          subtitle: isDateFiltered
-            ? `${values.length.toLocaleString('pt-BR')} leituras no periodo`
-            : latest
-              ? `Atualizado em ${formatDate(latest.data_referencia)}`
-              : 'Sem dados no filtro',
+          count: 1,
+          subtitle: `Atualizado em ${formatDate(latest.data_referencia)}`,
           metaLabel: metaLabel(key),
           inTarget: atingeMeta(key, value),
           score: scoreValue(key, value),
         };
       }),
-    [data, isDateFiltered],
+    [data],
   );
 
   const horarioStats = React.useMemo(() => {
@@ -167,7 +156,7 @@ const TecnicoOverview: React.FC<TecnicoOverviewProps> = ({
       ? indicatorsWithData.reduce((sum, item) => sum + item.score, 0) / indicatorsWithData.length
       : 0;
   const totalReadings =
-    indicatorResults.reduce((sum, item) => sum + item.count, 0) + (isDateFiltered ? horarioStats.total : horarioStats.latest ? 1 : 0);
+    indicatorResults.reduce((sum, item) => sum + item.count, 0) + horarioStats.total;
   const latestDate = [...data.map((row) => row.data_referencia), ...horarioData.map((row) => row.data_referencia)]
     .sort((a, b) => b.localeCompare(a))[0];
   const hasHorarioData = horarioStats.total > 0;
@@ -317,9 +306,7 @@ const TecnicoOverview: React.FC<TecnicoOverviewProps> = ({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {isDateFiltered
-              ? 'Com período filtrado, cada indicador mostra a média do técnico dentro do filtro.'
-              : 'Sem período filtrado, cada indicador mostra o último resultado disponível do técnico.'}
+            Cada indicador mostra o último resultado disponível no período. Horário mostra a média dos registros do período.
           </p>
         </CardContent>
       </Card>
