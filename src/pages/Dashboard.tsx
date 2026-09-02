@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CalendarDays } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -18,8 +19,14 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
+import {
+  applyActiveTechnicianMetadata,
+  fetchActiveDashboardTechnicians,
+  fetchIndicatorRows,
+  fetchScheduleRows,
+  shouldRetryDashboardQuery,
+} from '@/lib/dashboardQueries';
 import { formatDatePtBr, getCurrentMonthDateRange } from '@/lib/dateFilters';
-import { supabase } from '@/lib/supabase';
 import type { DadoTecnico, HorarioPrimeiroCliente, IndicadorKey, IndicadorTecnico } from '@/types/database';
 import { INDICADOR_LABELS } from '@/types/database';
 
@@ -35,9 +42,10 @@ const getStoredTab = (): string => {
   }
 };
 
-const normalizeLogin = (login: string) => login.trim().toUpperCase();
-
 const sameItems = (a: string[], b: string[]) => a.length === b.length && a.every((item, index) => item === b[index]);
+const EMPTY_INDICATORS: IndicadorTecnico[] = [];
+const EMPTY_SCHEDULES: HorarioPrimeiroCliente[] = [];
+const EMPTY_TECHNICIANS: DadoTecnico[] = [];
 
 const createEmptyFilters = (): DashboardFilterState => ({
   tecnicos: [],
@@ -63,156 +71,110 @@ const Dashboard = () => {
   const { selectedCity } = useCity();
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const technicianLogin = profile?.role === 'tecnico' ? profile.login_tecnico?.trim().toUpperCase() || '' : '';
   const isAdmin = profile?.role === 'admin';
   const isTechnicianDashboard = profile?.role === 'tecnico' && !!technicianLogin;
 
-  const [allIndicadores, setAllIndicadores] = useState<IndicadorTecnico[]>([]);
-  const [allHorarios, setAllHorarios] = useState<HorarioPrimeiroCliente[]>([]);
-  const [activeTechnicians, setActiveTechnicians] = useState<DadoTecnico[]>([]);
-  const [latestDate, setLatestDate] = useState<string>('');
-  const [loadError, setLoadError] = useState<string>('');
-  const [loadingData, setLoadingData] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(getStoredTab);
   const [filters, setFilters] = useState<DashboardFilterState>(() =>
     isTechnicianDashboard ? createTechnicianFilters() : createEmptyFilters(),
   );
 
-  const fetchData = async () => {
-    if (!selectedCity) {
-      setAllIndicadores([]);
-      setAllHorarios([]);
-      setActiveTechnicians([]);
-      setLoadingData(false);
-      return;
-    }
-    if (profile?.role === 'tecnico' && !technicianLogin) {
-      setAllIndicadores([]);
-      setAllHorarios([]);
-      setActiveTechnicians([]);
-      setLatestDate('');
-      setLoadError('Seu perfil técnico ainda não tem login vinculado. Peça para um administrador ajustar seu cadastro.');
-      setLoadingData(false);
-      return;
-    }
-
-    setLoadError('');
-    setLoadingData(true);
-
-    const fetchAll = async <T,>(table: 'indicadores_tecnicos' | 'horario_primeiro_cliente'): Promise<T[]> => {
-      const PAGE = 1000;
-      let from = 0;
-      const all: T[] = [];
-
-      while (true) {
-        let query = supabase
-          .from(table)
-          .select('*')
-          .eq('cidade', selectedCity);
-
-        if (technicianLogin) {
-          query = query.eq('login', technicianLogin);
-        }
-
-        const { data, error } = await query
-          .order('data_referencia', { ascending: true })
-          .order('login', { ascending: true })
-          .range(from, from + PAGE - 1);
-
-        if (error) {
-          throw new Error(`Erro ao buscar ${table}: ${error.message}`);
-        }
-        if (!data) break;
-
-        all.push(...(data as T[]));
-        if (data.length < PAGE) break;
-        from += PAGE;
-      }
-
-      return all;
-    };
-
-    const fetchActiveTechnicians = async (): Promise<DadoTecnico[]> => {
-      let query = supabase
-        .from('dados_tecnicos')
-        .select('login,nome,cidade,supervisor,ativo')
-        .eq('cidade', selectedCity)
-        .eq('ativo', true);
-
-      if (technicianLogin) {
-        query = query.eq('login', technicianLogin);
-      }
-
-      const { data, error } = await query.order('nome', { ascending: true });
-      if (error) {
-        throw new Error(`Erro ao buscar tecnicos ativos: ${error.message}`);
-      }
-
-      return (data as DadoTecnico[] | null) || [];
-    };
-
-    try {
-      const [ind, hor, technicianRows] = await Promise.all([
-        fetchAll<IndicadorTecnico>('indicadores_tecnicos'),
-        fetchAll<HorarioPrimeiroCliente>('horario_primeiro_cliente'),
-        fetchActiveTechnicians(),
-      ]);
-
-      const technicianByLogin = new Map(technicianRows.map((tecnico) => [normalizeLogin(tecnico.login), tecnico]));
-      const applyCurrentTechnician = <
-        T extends Pick<IndicadorTecnico, 'login' | 'tecnico' | 'supervisor' | 'cidade'>,
-      >(row: T): T | null => {
-        const tecnico = technicianByLogin.get(normalizeLogin(row.login));
-        if (!tecnico) return null;
-
-        return {
-          ...row,
-          login: normalizeLogin(tecnico.login),
-          tecnico: tecnico.nome,
-          supervisor: tecnico.supervisor,
-          cidade: tecnico.cidade,
-        };
-      };
-
-      const activeIndicadores = ind
-        .map(applyCurrentTechnician)
-        .filter((row): row is IndicadorTecnico => row !== null);
-      const activeHorarios = hor
-        .map(applyCurrentTechnician)
-        .filter((row): row is HorarioPrimeiroCliente => row !== null);
-
-      setAllIndicadores(activeIndicadores);
-      setAllHorarios(activeHorarios);
-      setActiveTechnicians(technicianRows);
-
-      if (activeIndicadores.length > 0) {
-        const maxDate = activeIndicadores.reduce(
-          (max, d) => (d.data_referencia > max ? d.data_referencia : max),
-          activeIndicadores[0].data_referencia,
-        );
-        setLatestDate(maxDate);
-      } else {
-        setLatestDate('');
-      }
-    } catch (error) {
-      setAllIndicadores([]);
-      setAllHorarios([]);
-      setActiveTechnicians([]);
-      setLatestDate('');
-      setLoadError(error instanceof Error ? error.message : 'Erro ao carregar dados do dashboard.');
-    } finally {
-      setLoadingData(false);
-    }
-  };
-
   useEffect(() => {
     if (!selectedCity) {
       navigate('/selecionar-cidade', { replace: true });
-      return;
     }
-    fetchData();
-  }, [selectedCity, profile?.role, profile?.login_tecnico]);
+  }, [navigate, selectedCity]);
+
+  const canLoad = Boolean(
+    selectedCity && profile && (profile.role !== 'tecnico' || technicianLogin),
+  );
+  const shouldLoadSchedules = canLoad && (
+    isTechnicianDashboard || activeTab === 'horario' || activeTab === 'comparativo_hro'
+  );
+  const queryDateRange = isTechnicianDashboard
+    ? { dataInicial: filters.dataInicial, dataFinal: filters.dataFinal }
+    : { dataInicial: undefined, dataFinal: undefined };
+
+  const techniciansQuery = useQuery<DadoTecnico[], Error>({
+    queryKey: ['dashboard-tecnicos-ativos', selectedCity, profile?.id, technicianLogin],
+    queryFn: ({ signal }) => fetchActiveDashboardTechnicians({
+      cidade: selectedCity!,
+      loginTecnico: technicianLogin || undefined,
+      signal,
+    }),
+    enabled: canLoad,
+    staleTime: 60_000,
+    retry: shouldRetryDashboardQuery,
+  });
+
+  const indicatorsQuery = useQuery<IndicadorTecnico[], Error>({
+    queryKey: [
+      'dashboard-indicadores',
+      selectedCity,
+      profile?.id,
+      technicianLogin,
+      queryDateRange.dataInicial,
+      queryDateRange.dataFinal,
+    ],
+    queryFn: ({ signal }) => fetchIndicatorRows({
+      cidade: selectedCity!,
+      loginTecnico: technicianLogin || undefined,
+      dataInicial: queryDateRange.dataInicial,
+      dataFinal: queryDateRange.dataFinal,
+      signal,
+    }),
+    enabled: canLoad,
+    staleTime: 60_000,
+    retry: shouldRetryDashboardQuery,
+  });
+
+  const schedulesQuery = useQuery<HorarioPrimeiroCliente[], Error>({
+    queryKey: [
+      'dashboard-horarios',
+      selectedCity,
+      profile?.id,
+      technicianLogin,
+      queryDateRange.dataInicial,
+      queryDateRange.dataFinal,
+    ],
+    queryFn: ({ signal }) => fetchScheduleRows({
+      cidade: selectedCity!,
+      loginTecnico: technicianLogin || undefined,
+      dataInicial: queryDateRange.dataInicial,
+      dataFinal: queryDateRange.dataFinal,
+      signal,
+    }),
+    enabled: shouldLoadSchedules,
+    staleTime: 60_000,
+    retry: shouldRetryDashboardQuery,
+  });
+
+  const activeTechnicians = techniciansQuery.data ?? EMPTY_TECHNICIANS;
+  const indicadores = useMemo(
+    () => applyActiveTechnicianMetadata(indicatorsQuery.data ?? EMPTY_INDICATORS, activeTechnicians),
+    [activeTechnicians, indicatorsQuery.data],
+  );
+  const horarios = useMemo(
+    () => applyActiveTechnicianMetadata(schedulesQuery.data ?? EMPTY_SCHEDULES, activeTechnicians),
+    [activeTechnicians, schedulesQuery.data],
+  );
+  const latestDate = useMemo(
+    () => indicadores.reduce((latest, row) => (row.data_referencia > latest ? row.data_referencia : latest), ''),
+    [indicadores],
+  );
+  const technicianName = isTechnicianDashboard ? activeTechnicians[0]?.nome || '' : '';
+  const loadingData = canLoad && (
+    techniciansQuery.isPending ||
+    indicatorsQuery.isPending ||
+    (isTechnicianDashboard && schedulesQuery.isPending)
+  );
+  const queryError = techniciansQuery.error || indicatorsQuery.error || (shouldLoadSchedules ? schedulesQuery.error : null);
+  const loadError = profile?.role === 'tecnico' && !technicianLogin
+    ? 'Seu perfil técnico ainda não tem login vinculado. Peça para um administrador ajustar seu cadastro.'
+    : queryError?.message || '';
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
@@ -222,10 +184,6 @@ const Dashboard = () => {
       // Ignore localStorage errors when storage is unavailable.
     }
   };
-
-  const indicadores = allIndicadores;
-  const horarios = allHorarios;
-  const technicianName = isTechnicianDashboard ? activeTechnicians[0]?.nome || '' : '';
 
   const filteredData = useMemo(() => {
     let data = indicadores;
@@ -364,6 +322,14 @@ const Dashboard = () => {
 
   const clearFilters = () => setFilters(isTechnicianDashboard ? createTechnicianFilters(technicianName) : createEmptyFilters());
 
+  const refreshData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['dashboard-tecnicos-ativos', selectedCity] }),
+      queryClient.invalidateQueries({ queryKey: ['dashboard-indicadores', selectedCity] }),
+      queryClient.invalidateQueries({ queryKey: ['dashboard-horarios', selectedCity] }),
+    ]);
+  };
+
   const exportCSV = () => {
     const ws = XLSX.utils.json_to_sheet(filteredData);
     const csv = XLSX.utils.sheet_to_csv(ws);
@@ -496,11 +462,27 @@ const Dashboard = () => {
             ))}
 
             <TabsContent value="horario" className="mt-4">
-              <HorarioTab data={filteredHorarios} isDateFiltered={isDateFiltered} />
+              {schedulesQuery.isPending ? (
+                <DashboardLoadingState
+                  cards={4}
+                  title="Carregando horários"
+                  description="Buscando os horários da cidade selecionada."
+                />
+              ) : (
+                <HorarioTab data={filteredHorarios} isDateFiltered={isDateFiltered} />
+              )}
             </TabsContent>
 
             <TabsContent value="comparativo_hro" className="mt-4">
-              <ComparativoHroTab horarioData={filteredHorarios} />
+              {schedulesQuery.isPending ? (
+                <DashboardLoadingState
+                  cards={2}
+                  title="Carregando comparativo HRO"
+                  description="Buscando os horários necessários para o comparativo."
+                />
+              ) : (
+                <ComparativoHroTab horarioData={filteredHorarios} />
+              )}
             </TabsContent>
 
             <TabsContent value="supervisor" className="mt-4">
@@ -510,7 +492,7 @@ const Dashboard = () => {
         )}
       </main>
 
-      {isAdmin && <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImportComplete={fetchData} />}
+      {isAdmin && <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImportComplete={refreshData} />}
     </div>
   );
 };
