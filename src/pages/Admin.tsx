@@ -21,6 +21,14 @@ const statusConfig: Record<StatusAprovacao, { label: string; variant: 'default' 
   rejeitado: { label: 'Rejeitado', variant: 'destructive' },
 };
 
+const ROLE_ORDER = ['admin', 'tecnico', 'user'];
+
+const getRoleLabel = (role: string) =>
+  USER_ROLE_LABELS[role as UserRole] ??
+  role
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
 const Admin = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
@@ -30,6 +38,32 @@ const Admin = () => {
   const [loadingSolicitacoes, setLoadingSolicitacoes] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<Record<string, UserRole>>({});
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+
+  const userRoleStats = React.useMemo(() => {
+    const counts = new Map<string, number>();
+
+    users.forEach((user) => {
+      const role = String(user.role || 'outros');
+      counts.set(role, (counts.get(role) || 0) + 1);
+    });
+
+    return [...counts.entries()]
+      .map(([role, count]) => ({ role, count, label: getRoleLabel(role) }))
+      .sort((a, b) => {
+        const aIndex = ROLE_ORDER.indexOf(a.role);
+        const bIndex = ROLE_ORDER.indexOf(b.role);
+        if (aIndex !== -1 || bIndex !== -1) {
+          return (aIndex === -1 ? ROLE_ORDER.length : aIndex) - (bIndex === -1 ? ROLE_ORDER.length : bIndex);
+        }
+        return a.label.localeCompare(b.label, 'pt-BR');
+      });
+  }, [users]);
+
+  const filteredUsers = React.useMemo(
+    () => userRoleFilter === 'all' ? users : users.filter((user) => String(user.role) === userRoleFilter),
+    [userRoleFilter, users],
+  );
 
   useEffect(() => {
     if (profile?.role !== 'admin') {
@@ -43,7 +77,11 @@ const Admin = () => {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('status_aprovacao', 'aprovado')
+      .order('created_at', { ascending: false });
     if (error) {
       console.error('Erro ao carregar usuários:', error);
       toast.error('Não foi possível carregar os usuários aprovados.');
@@ -59,6 +97,7 @@ const Admin = () => {
     const { data, error } = await supabase
       .from('solicitacoes_acesso')
       .select('*')
+      .eq('status', 'pendente')
       .order('created_at', { ascending: false });
     if (error) {
       console.error('Erro ao carregar solicitações:', error);
@@ -141,6 +180,27 @@ const Admin = () => {
     }
     await fetchUsers();
     toast.success('Nível de acesso atualizado.');
+    setUpdating(null);
+  };
+
+  const revogarAcesso = async (user: Profile) => {
+    setUpdating(user.id);
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ status_aprovacao: 'rejeitado' })
+      .eq('id', user.id)
+      .select('id')
+      .maybeSingle();
+
+    if (error || !data) {
+      toast.error(`Falha ao revogar acesso: ${error?.message || 'usuário não encontrado.'}`);
+      setUpdating(null);
+      return;
+    }
+
+    setUsers((current) => current.filter((item) => item.id !== user.id));
+    toast.success('Acesso revogado com sucesso.');
     setUpdating(null);
   };
 
@@ -240,12 +300,7 @@ const Admin = () => {
           variant="outline"
           className="w-full h-8 text-xs"
           disabled={updating === user.id}
-          onClick={async () => {
-            setUpdating(user.id);
-            await supabase.from('profiles').update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
-            await fetchUsers();
-            setUpdating(null);
-          }}
+          onClick={() => void revogarAcesso(user)}
         >
           <XCircle className="h-3 w-3" /> Revogar Acesso
         </Button>
@@ -308,7 +363,7 @@ const Admin = () => {
                   </div>
                 ) : solicitacoes.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    Nenhuma solicitação de acesso.
+                    Nenhuma solicitação pendente.
                   </div>
                 ) : (
                   <>
@@ -391,8 +446,18 @@ const Admin = () => {
 
           <TabsContent value="usuarios">
             <Card className="shadow-sm">
-              <CardHeader>
+              <CardHeader className="gap-3">
                 <CardTitle className="text-base sm:text-lg">Usuários com Acesso</CardTitle>
+                {!loading && (
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">Todos: {users.length}</Badge>
+                    {userRoleStats.map((item) => (
+                      <Badge key={item.role} variant="outline">
+                        {item.label}: {item.count}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -401,75 +466,94 @@ const Admin = () => {
                   </div>
                 ) : (
                   <>
-                    {/* Mobile cards */}
-                    <div className="space-y-3 sm:hidden">
-                      {users.map((user) => <UserCard key={user.id} user={user} />)}
-                    </div>
-                    {/* Desktop table */}
-                    <div className="hidden sm:block overflow-x-auto -mx-6">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nome</TableHead>
-                            <TableHead>E-mail</TableHead>
-                            <TableHead>Login técnico</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Tipo</TableHead>
-                            <TableHead>Data</TableHead>
-                            <TableHead className="text-right">Ações</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {users.map((user) => (
-                            <TableRow key={user.id}>
-                              <TableCell className="font-medium">{user.nome}</TableCell>
-                              <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                              <TableCell className="text-muted-foreground text-sm">{user.login_tecnico || '-'}</TableCell>
-                              <TableCell>
-                                <Badge variant={statusConfig[user.status_aprovacao].variant}>
-                                  {user.status_aprovacao === 'pendente' && <Clock className="h-3 w-3 mr-1" />}
-                                  {user.status_aprovacao === 'aprovado' && <CheckCircle className="h-3 w-3 mr-1" />}
-                                  {user.status_aprovacao === 'rejeitado' && <XCircle className="h-3 w-3 mr-1" />}
-                                  {statusConfig[user.status_aprovacao].label}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {updating === user.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin inline" />
-                                ) : (
-                                  <Select value={user.role} onValueChange={(val) => updateUserRole(user, val as UserRole)}>
-                                    <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="user">Padrão</SelectItem>
-                                      <SelectItem value="tecnico">Técnico</SelectItem>
-                                      <SelectItem value="admin">Admin</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground text-sm">{new Date(user.created_at).toLocaleDateString('pt-BR')}</TableCell>
-                              <TableCell className="text-right space-x-2">
-                                {user.status_aprovacao !== 'rejeitado' && user.id !== profile?.id && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={updating === user.id}
-                                    onClick={async () => {
-                                      setUpdating(user.id);
-                                      await supabase.from('profiles').update({ status_aprovacao: 'rejeitado' }).eq('id', user.id);
-                                      await fetchUsers();
-                                      setUpdating(null);
-                                    }}
-                                  >
-                                    <XCircle className="h-3 w-3" /> Revogar
-                                  </Button>
-                                )}
-                              </TableCell>
-                            </TableRow>
+                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <span className="text-sm font-medium text-foreground">Tipo de acesso</span>
+                      <Select value={userRoleFilter} onValueChange={setUserRoleFilter}>
+                        <SelectTrigger className="w-full sm:w-60">
+                          <SelectValue placeholder="Todos os tipos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos ({users.length})</SelectItem>
+                          {userRoleStats.map((item) => (
+                            <SelectItem key={item.role} value={item.role}>
+                              {item.label} ({item.count})
+                            </SelectItem>
                           ))}
-                        </TableBody>
-                      </Table>
+                        </SelectContent>
+                      </Select>
                     </div>
+                    {filteredUsers.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground">
+                        Nenhum usuário aprovado neste tipo de acesso.
+                      </div>
+                    ) : (
+                      <>
+                        {/* Mobile cards */}
+                        <div className="space-y-3 sm:hidden">
+                          {filteredUsers.map((user) => <UserCard key={user.id} user={user} />)}
+                        </div>
+                        {/* Desktop table */}
+                        <div className="hidden sm:block overflow-x-auto -mx-6">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Nome</TableHead>
+                                <TableHead>E-mail</TableHead>
+                                <TableHead>Login técnico</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Tipo</TableHead>
+                                <TableHead>Data</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredUsers.map((user) => (
+                                <TableRow key={user.id}>
+                                  <TableCell className="font-medium">{user.nome}</TableCell>
+                                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                                  <TableCell className="text-muted-foreground text-sm">{user.login_tecnico || '-'}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={statusConfig[user.status_aprovacao].variant}>
+                                      {user.status_aprovacao === 'pendente' && <Clock className="h-3 w-3 mr-1" />}
+                                      {user.status_aprovacao === 'aprovado' && <CheckCircle className="h-3 w-3 mr-1" />}
+                                      {user.status_aprovacao === 'rejeitado' && <XCircle className="h-3 w-3 mr-1" />}
+                                      {statusConfig[user.status_aprovacao].label}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    {updating === user.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin inline" />
+                                    ) : (
+                                      <Select value={user.role} onValueChange={(val) => updateUserRole(user, val as UserRole)}>
+                                        <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="user">Padrão</SelectItem>
+                                          <SelectItem value="tecnico">Técnico</SelectItem>
+                                          <SelectItem value="admin">Admin</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground text-sm">{new Date(user.created_at).toLocaleDateString('pt-BR')}</TableCell>
+                                  <TableCell className="text-right space-x-2">
+                                    {user.status_aprovacao !== 'rejeitado' && user.id !== profile?.id && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={updating === user.id}
+                                        onClick={() => void revogarAcesso(user)}
+                                      >
+                                        <XCircle className="h-3 w-3" /> Revogar
+                                      </Button>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </CardContent>
