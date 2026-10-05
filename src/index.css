@@ -124,9 +124,22 @@
 
   @media (min-width: 1024px) {
     .dashboard-container {
-      margin-left: 14rem;
+      margin-left: var(--dashboard-sidebar-width, 14rem);
       max-width: none;
-      width: calc(100% - 14rem);
+      width: calc(100% - var(--dashboard-sidebar-width, 14rem));
+      transition: margin-left 200ms ease, width 200ms ease;
+    }
+
+    .dashboard-header {
+      margin-left: var(--dashboard-sidebar-width, 14rem);
+      transition: margin-left 200ms ease;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .dashboard-container,
+      .dashboard-header {
+        transition: none;
+      }
     }
   }
 

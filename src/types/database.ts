@@ -1,3 +1,11 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 export type StatusAprovacao = 'pendente' | 'aprovado' | 'rejeitado';
 export type UserRole = 'admin' | 'user' | 'tecnico';
 
@@ -219,6 +227,49 @@ export type ComissaoServico = {
   updated_at: string;
 };
 
+export type ComissaoPeriodo = {
+  id: string;
+  competencia: string;
+  data_inicio: string;
+  data_fim: string;
+  cidade: string;
+  consultado_por: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ComissaoPeriodoTecnico = {
+  id: string;
+  periodo_id: string;
+  id_instalador: number;
+  tecnico_api: string;
+  tecnico: string;
+  login: string | null;
+  qtd_produtos: number;
+  qtd_contrato: number;
+  qtd_os: number;
+  total_valor: number;
+  total_valor_instalador: number;
+  total_valor_auxiliar: number;
+};
+
+export type ComissaoPeriodoDetalhe = {
+  id: string;
+  periodo_id: string;
+  id_instalador: number;
+  tecnico_api: string;
+  tecnico: string;
+  login: string | null;
+  id_comissionamento: number;
+  produto_api: string;
+  produto: string;
+  qtd_contrato: number;
+  qtd_os: number;
+  valor: number;
+  valor_instalador: number;
+  valor_auxiliar: number;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -307,9 +358,43 @@ export type Database = {
         Update: Partial<Omit<ComissaoServico, 'id' | 'created_at' | 'updated_at'>>;
         Relationships: [];
       };
+      comissao_periodos: {
+        Row: ComissaoPeriodo;
+        Insert: Partial<Pick<ComissaoPeriodo, 'id' | 'consultado_por' | 'created_at' | 'updated_at'>> & {
+          competencia: string;
+          data_inicio: string;
+          data_fim: string;
+          cidade: string;
+        };
+        Update: Partial<Omit<ComissaoPeriodo, 'id' | 'created_at'>>;
+        Relationships: [];
+      };
+      comissao_periodo_tecnicos: {
+        Row: ComissaoPeriodoTecnico;
+        Insert: Omit<ComissaoPeriodoTecnico, 'id'> & { id?: string };
+        Update: Partial<Omit<ComissaoPeriodoTecnico, 'id'>>;
+        Relationships: [];
+      };
+      comissao_periodo_detalhes: {
+        Row: ComissaoPeriodoDetalhe;
+        Insert: Omit<ComissaoPeriodoDetalhe, 'id'> & { id?: string };
+        Update: Partial<Omit<ComissaoPeriodoDetalhe, 'id'>>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      salvar_comissao_mensal: {
+        Args: {
+          p_cidade: string;
+          p_data_inicio: string;
+          p_data_fim: string;
+          p_resumo: Json;
+          p_detalhado: Json;
+        };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

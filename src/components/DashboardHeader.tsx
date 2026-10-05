@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -8,7 +8,8 @@ import {
   LayoutDashboard,
   LogOut,
   MapPin,
-  PackageOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Route,
   ShieldCheck,
@@ -26,7 +27,7 @@ const navItems = [
   { path: '/dashboard', label: 'Visão Geral', icon: LayoutDashboard, roles: ['admin', 'user', 'tecnico'] as UserRole[] },
   { path: '/km-rotas', label: 'KM Rotas', icon: Route, roles: ['admin', 'tecnico'] as UserRole[] },
   // { path: '/excesso-miscelaneas', label: 'Miscelâneas', icon: PackageOpen, roles: ['admin'] as UserRole[] },
-  { path: '/comissao-gatilho', label: 'Comissão', icon: BadgeDollarSign, roles: ['admin'] as UserRole[] },
+  { path: '/comissao-gatilho', label: 'Serviços', icon: BadgeDollarSign, roles: ['admin'] as UserRole[] },
 ];
 
 const adminNavItem = { path: '/admin', label: 'Configurações', icon: ShieldCheck, roles: ['admin'] as UserRole[] };
@@ -41,6 +42,16 @@ const DashboardHeader: React.FC = () => {
   const visibleNavItems = navItems.filter((item) => item.roles.includes(profileRole));
   const mobileNavItems = profileRole === 'admin' ? [...visibleNavItems, adminNavItem] : visibleNavItems;
   const roleLabel = profileRole === 'admin' ? 'Administrador' : USER_ROLE_LABELS[profileRole] ?? 'Operação';
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('dashboard-sidebar-collapsed') === 'true';
+  });
+
+  useLayoutEffect(() => {
+    const width = sidebarCollapsed ? '4.5rem' : '14rem';
+    document.documentElement.style.setProperty('--dashboard-sidebar-width', width);
+    window.localStorage.setItem('dashboard-sidebar-collapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   const handleChangeCity = () => {
     setSelectedCity(null);
@@ -75,27 +86,45 @@ const DashboardHeader: React.FC = () => {
         type="button"
         onClick={() => navigate(item.path)}
         aria-current={active ? 'page' : undefined}
+        aria-label={sidebarCollapsed ? item.label : undefined}
+        title={sidebarCollapsed ? item.label : undefined}
         className={cn(
-          'flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+          'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+          sidebarCollapsed && 'justify-center px-0',
           active
             ? 'bg-primary text-primary-foreground shadow-sm'
             : 'text-slate-300 hover:bg-white/10 hover:text-white',
         )}
       >
         <Icon className="size-4" />
-        <span className="truncate">{item.label}</span>
+        {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
       </button>
     );
   };
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col bg-slate-950 text-white shadow-xl lg:flex">
-        <div className="flex h-16 items-center gap-3 bg-primary px-5">
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 hidden flex-col bg-slate-950 text-white shadow-xl transition-[width] duration-200 motion-reduce:transition-none lg:flex',
+          sidebarCollapsed ? 'w-[4.5rem]' : 'w-56',
+        )}
+      >
+        <div className={cn('relative flex h-16 items-center gap-3 bg-primary', sidebarCollapsed ? 'justify-center px-2' : 'px-5')}>
           <img src={logo} alt="TechNET" className="size-8 rounded-md bg-white object-cover" />
-          <div className="min-w-0">
+          {!sidebarCollapsed && <div className="min-w-0">
             <p className="truncate font-display text-lg font-bold leading-tight">Indicadores TEC</p>
-          </div>
+          </div>}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            className="absolute -right-3 top-1/2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            aria-expanded={!sidebarCollapsed}
+            title={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 px-2 py-3" aria-label="Menu lateral">
@@ -106,48 +135,61 @@ const DashboardHeader: React.FC = () => {
               type="button"
               onClick={() => navigate('/admin')}
               aria-current={location.pathname === '/admin' ? 'page' : undefined}
+              aria-label={sidebarCollapsed ? 'Configurações' : undefined}
+              title={sidebarCollapsed ? 'Configurações' : undefined}
               className={cn(
                 'mt-2 flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+                sidebarCollapsed && 'justify-center px-0',
                 location.pathname === '/admin'
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-slate-300 hover:bg-white/10 hover:text-white',
               )}
             >
               <ShieldCheck className="size-4" />
-              <span>Configurações</span>
+              {!sidebarCollapsed && <span>Configurações</span>}
             </button>
           )}
         </nav>
 
-        <div className="border-t border-white/10 p-3">
+        <div className={cn('border-t border-white/10', sidebarCollapsed ? 'p-2' : 'p-3')}>
           <button
             type="button"
             onClick={handleOpenProfile}
-            className="mb-3 w-full cursor-pointer rounded-lg bg-white/5 p-3 text-left transition-colors hover:bg-white/10"
+            aria-label={sidebarCollapsed ? 'Abrir meu perfil' : undefined}
+            title={sidebarCollapsed ? 'Meu perfil' : undefined}
+            className={cn(
+              'mb-3 w-full cursor-pointer rounded-lg bg-white/5 text-left transition-colors hover:bg-white/10',
+              sidebarCollapsed ? 'flex justify-center p-2' : 'p-3',
+            )}
           >
             <div className="flex items-center gap-2">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-slate-950">
                 {profile?.nome?.slice(0, 2).toUpperCase() || 'US'}
               </div>
-              <div className="min-w-0">
+              {!sidebarCollapsed && <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{profile?.nome || 'Usuário'}</p>
                 <p className="truncate text-xs text-slate-400">{roleLabel}</p>
-              </div>
+              </div>}
             </div>
           </button>
 
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label={sidebarCollapsed ? 'Sair' : undefined}
+            title={sidebarCollapsed ? 'Sair' : undefined}
+            className={cn(
+              'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white',
+              sidebarCollapsed && 'justify-center px-0',
+            )}
           >
             <LogOut className="size-4" />
-            Sair
+            {!sidebarCollapsed && 'Sair'}
           </button>
         </div>
       </aside>
 
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85 lg:ml-56">
+      <header className="dashboard-header sticky top-0 z-40 border-b border-border bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85">
         <div className="flex min-h-16 flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-6">
           <div className="flex min-w-0 items-center justify-between gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground lg:hidden">

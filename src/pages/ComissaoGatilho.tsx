@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardList,
   FilterX,
+  FileBarChart2,
   MapPin,
   PackageCheck,
   RefreshCw,
@@ -19,6 +20,7 @@ import DashboardHeader from '@/components/DashboardHeader';
 import DashboardLoadingState from '@/components/DashboardLoadingState';
 import KPICard from '@/components/KPICard';
 import MultiSelectCombobox from '@/components/MultiSelectCombobox';
+import ComissaoReportsDialog from '@/components/comissao/ComissaoReportsDialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,8 +30,10 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
-import { fetchComissao, type ComissaoApiResponse, type ComissaoDetalhadoItem, type ComissaoResumoItem } from '@/lib/comissaoApi';
+import { fetchComissao, type ComissaoApiResponse, type ComissaoDetalhadoItem } from '@/lib/comissaoApi';
+import { isSingleMonthRange, loadLatestComissaoMonth, saveComissaoMonth } from '@/lib/comissaoHistory';
 import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import type { ComissaoServico, ComissaoTecnico, Cidade } from '@/types/database';
 
 const COMISSAO_CITY: Cidade = 'NATAL/PARNAMIRIM';
@@ -41,18 +45,15 @@ type DetalhadoEnriquecido = ComissaoDetalhadoItem & {
   servicoLabel: string;
 };
 
-type RankingTecnico = {
+type ProducaoTecnico = {
   idInstalador: number;
   tecnico: string;
   login: string;
   nomeApi: string;
   contratos: number;
   os: number;
-  pontosResumo: number;
-  valorFiltrado: number;
-  valorInstalador: number;
-  valorAuxiliar: number;
-  produtos: number;
+  valor: number;
+  servicos: number;
   mapeado: boolean;
 };
 
@@ -112,8 +113,12 @@ const ComissaoGatilho = () => {
   const [apiData, setApiData] = useState<ComissaoApiResponse | null>(null);
   const [mappingError, setMappingError] = useState('');
   const [apiError, setApiError] = useState('');
+  const [persistenceError, setPersistenceError] = useState('');
+  const [historyError, setHistoryError] = useState('');
   const [loadingMappings, setLoadingMappings] = useState(false);
   const [loadingApi, setLoadingApi] = useState(false);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
 
   useEffect(() => {
     if (!selectedCity) {
@@ -174,6 +179,35 @@ const ComissaoGatilho = () => {
     };
   }, [isAdmin, isCommissionCity]);
 
+  useEffect(() => {
+    if (!isAdmin || !isCommissionCity) return;
+
+    let active = true;
+    const loadSavedData = async () => {
+      setLoadingSaved(true);
+      setHistoryError('');
+
+      try {
+        const saved = await loadLatestComissaoMonth(COMISSAO_CITY);
+        if (!active || !saved) return;
+
+        setDataInicial(saved.periodo.data_inicio);
+        setDataFinal(saved.periodo.data_fim);
+        setApiData(saved.response);
+      } catch (error) {
+        if (!active) return;
+        setHistoryError(error instanceof Error ? error.message : 'Erro ao carregar o histórico de comissão.');
+      } finally {
+        if (active) setLoadingSaved(false);
+      }
+    };
+
+    void loadSavedData();
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, isCommissionCity]);
+
   const tecnicoByInstallerId = useMemo(() => {
     const map = new Map<number, ComissaoTecnico>();
     tecnicosMapeados.forEach((tecnico) => map.set(tecnico.id_instalador, tecnico));
@@ -186,14 +220,30 @@ const ComissaoGatilho = () => {
     return map;
   }, [servicosMapeados]);
 
+  const response = apiData ?? emptyApi;
+
   const tecnicoOptions = useMemo(
-    () => tecnicosMapeados.map(tecnicoOptionLabel).sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [tecnicosMapeados],
+    () => {
+      const options = new Set(tecnicosMapeados.map(tecnicoOptionLabel));
+      response.resumo.forEach((item) => {
+        const mapped = tecnicoByInstallerId.get(item.IdInstalador);
+        options.add(mapped ? tecnicoOptionLabel(mapped) : item.NomeAbreviado || `Instalador ${item.IdInstalador}`);
+      });
+      return [...options].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    },
+    [response.resumo, tecnicoByInstallerId, tecnicosMapeados],
   );
 
   const servicoOptions = useMemo(
-    () => servicosMapeados.map(servicoOptionLabel).sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [servicosMapeados],
+    () => {
+      const options = new Set(servicosMapeados.map(servicoOptionLabel));
+      response.detalhado.forEach((item) => {
+        const mapped = servicoByComissionamentoId.get(item.IdComissionamento);
+        options.add(mapped ? servicoOptionLabel(mapped) : `${item.IdComissionamento} - ${item.Produto}`);
+      });
+      return [...options].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    },
+    [response.detalhado, servicoByComissionamentoId, servicosMapeados],
   );
 
   const handleBuscar = async () => {
@@ -212,13 +262,27 @@ const ComissaoGatilho = () => {
       return;
     }
 
+    if (!isSingleMonthRange(dataInicial, dataFinal)) {
+      toast.error('A consulta deve ficar dentro do mesmo mês para ser salva na competência correta.');
+      return;
+    }
+
     setLoadingApi(true);
     setApiError('');
+    setPersistenceError('');
 
     try {
       const response = await fetchComissao(dataInicial, dataFinal);
       setApiData(response);
-      toast.success('Dados de comissão carregados.');
+
+      try {
+        await saveComissaoMonth(COMISSAO_CITY, dataInicial, dataFinal, response);
+        toast.success(`Comissão de ${formatDateBR(dataInicial)} a ${formatDateBR(dataFinal)} carregada e salva.`);
+      } catch (saveError) {
+        const message = saveError instanceof Error ? saveError.message : 'Erro ao salvar o histórico mensal.';
+        setPersistenceError(message);
+        toast.warning('Dados carregados, mas o histórico mensal não pôde ser salvo.');
+      }
     } catch (error) {
       setApiData(null);
       setApiError(error instanceof Error ? error.message : 'Erro ao buscar dados da API de comissão.');
@@ -231,8 +295,6 @@ const ComissaoGatilho = () => {
     setSelectedTecnicos([]);
     setSelectedServicos([]);
   };
-
-  const response = apiData ?? emptyApi;
 
   const detalhesEnriquecidos = useMemo<DetalhadoEnriquecido[]>(() => {
     return response.detalhado.map((item) => {
@@ -257,54 +319,46 @@ const ComissaoGatilho = () => {
     });
   }, [detalhesEnriquecidos, selectedServicos, selectedTecnicos]);
 
-  const resumoFiltrado = useMemo(() => {
-    const installersComServico = new Set(detalhesFiltrados.map((item) => item.IdInstalador));
+  const producaoTecnicos = useMemo<ProducaoTecnico[]>(() => {
+    const map = new Map<number, ProducaoTecnico & { servicoIds: Set<number> }>();
 
-    return response.resumo.filter((item) => {
-      const tecnicoMapeado = tecnicoByInstallerId.get(item.IdInstalador);
-      const tecnicoLabel = tecnicoMapeado ? tecnicoOptionLabel(tecnicoMapeado) : item.NomeAbreviado || `Instalador ${item.IdInstalador}`;
-      const matchTecnico = selectedTecnicos.length === 0 || selectedTecnicos.includes(tecnicoLabel);
-      const matchServico = selectedServicos.length === 0 || installersComServico.has(item.IdInstalador);
-      return matchTecnico && matchServico;
-    });
-  }, [detalhesFiltrados, response.resumo, selectedServicos.length, selectedTecnicos, tecnicoByInstallerId]);
-
-  const rankingTecnicos = useMemo<RankingTecnico[]>(() => {
-    const detalhesPorTecnico = new Map<number, DetalhadoEnriquecido[]>();
     detalhesFiltrados.forEach((item) => {
-      const rows = detalhesPorTecnico.get(item.IdInstalador) ?? [];
-      rows.push(item);
-      detalhesPorTecnico.set(item.IdInstalador, rows);
+      const current = map.get(item.IdInstalador) ?? {
+        idInstalador: item.IdInstalador,
+        tecnico: item.tecnicoMapeado?.tecnico ?? item.NomeAbreviado,
+        login: item.tecnicoMapeado?.login ?? '-',
+        nomeApi: item.NomeAbreviado,
+        contratos: 0,
+        os: 0,
+        valor: 0,
+        servicos: 0,
+        mapeado: Boolean(item.tecnicoMapeado),
+        servicoIds: new Set<number>(),
+      };
+
+      current.contratos += item.QtdContrato;
+      current.os += item.QtdOs;
+      current.valor += item.Valor;
+      current.servicoIds.add(item.IdComissionamento);
+      current.servicos = current.servicoIds.size;
+      map.set(item.IdInstalador, current);
     });
 
-    return resumoFiltrado
-      .map((item: ComissaoResumoItem) => {
-        const tecnicoMapeado = tecnicoByInstallerId.get(item.IdInstalador);
-        const detalhes = detalhesPorTecnico.get(item.IdInstalador) ?? [];
-        const produtos = new Set(detalhes.map((detalhe) => detalhe.IdComissionamento));
+    return [...map.values()]
+      .map(({ servicoIds, ...item }) => item)
+      .sort((a, b) => b.contratos - a.contratos || b.os - a.os);
+  }, [detalhesFiltrados]);
 
-        return {
-          idInstalador: item.IdInstalador,
-          tecnico: tecnicoMapeado?.tecnico ?? item.NomeAbreviado,
-          login: tecnicoMapeado?.login ?? '-',
-          nomeApi: item.NomeAbreviado,
-          contratos: detalhes.reduce((sum, detalhe) => sum + detalhe.QtdContrato, 0),
-          os: detalhes.reduce((sum, detalhe) => sum + detalhe.QtdOs, 0),
-          pontosResumo: item.TotalValor,
-          valorFiltrado: detalhes.reduce((sum, detalhe) => sum + detalhe.Valor, 0),
-          valorInstalador: item.TotalValorInstalador,
-          valorAuxiliar: item.TotalValorAuxiliar,
-          produtos: produtos.size || item.QtdProdutos,
-          mapeado: Boolean(tecnicoMapeado),
-        };
-      })
-      .sort((a, b) => b.pontosResumo - a.pontosResumo);
-  }, [detalhesFiltrados, resumoFiltrado, tecnicoByInstallerId]);
+  const detalhesParaCompararServicos = useMemo(() => {
+    return detalhesEnriquecidos.filter((item) => (
+      selectedTecnicos.length === 0 || selectedTecnicos.includes(item.tecnicoLabel)
+    ));
+  }, [detalhesEnriquecidos, selectedTecnicos]);
 
   const servicosAgregados = useMemo<ServicoAgregado[]>(() => {
     const map = new Map<number, ServicoAgregado & { tecnicoSet: Set<number> }>();
 
-    detalhesFiltrados.forEach((item) => {
+    detalhesParaCompararServicos.forEach((item) => {
       const servicoMapeado = item.servicoMapeado;
       const current = map.get(item.IdComissionamento) ?? {
         idComissionamento: item.IdComissionamento,
@@ -328,10 +382,10 @@ const ComissaoGatilho = () => {
     return [...map.values()]
       .map(({ tecnicoSet, ...item }) => item)
       .sort((a, b) => b.contratos - a.contratos);
-  }, [detalhesFiltrados]);
+  }, [detalhesParaCompararServicos]);
 
   const totals = useMemo(() => {
-    const uniqueTecnicos = new Set(resumoFiltrado.map((item) => item.IdInstalador));
+    const uniqueTecnicos = new Set(detalhesFiltrados.map((item) => item.IdInstalador));
     const uniqueServicos = new Set(detalhesFiltrados.map((item) => item.IdComissionamento));
 
     return {
@@ -339,10 +393,12 @@ const ComissaoGatilho = () => {
       servicos: uniqueServicos.size,
       contratos: detalhesFiltrados.reduce((sum, item) => sum + item.QtdContrato, 0),
       os: detalhesFiltrados.reduce((sum, item) => sum + item.QtdOs, 0),
-      pontosResumo: resumoFiltrado.reduce((sum, item) => sum + item.TotalValor, 0),
       valorFiltrado: detalhesFiltrados.reduce((sum, item) => sum + item.Valor, 0),
+      mediaPorTecnico: uniqueTecnicos.size > 0
+        ? detalhesFiltrados.reduce((sum, item) => sum + item.QtdContrato, 0) / uniqueTecnicos.size
+        : 0,
     };
-  }, [detalhesFiltrados, resumoFiltrado]);
+  }, [detalhesFiltrados]);
 
   const missingTechnicians = useMemo(() => {
     const ids = new Set<number>();
@@ -361,6 +417,19 @@ const ComissaoGatilho = () => {
   }, [response.detalhado, servicoByComissionamentoId]);
 
   const maxContratosServico = Math.max(...servicosAgregados.map((item) => item.contratos), 1);
+
+  const handleFocusServico = (servico: ServicoAgregado) => {
+    const mapped = servicoByComissionamentoId.get(servico.idComissionamento);
+    const label = mapped
+      ? servicoOptionLabel(mapped)
+      : `${servico.idComissionamento} - ${servico.produto}`;
+    setSelectedServicos([label]);
+    setSelectedTecnicos([]);
+    window.requestAnimationFrame(() => {
+      document.getElementById('producao-por-tecnico')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   const hasData = Boolean(apiData);
   const hasActiveFilters = selectedTecnicos.length > 0 || selectedServicos.length > 0;
 
@@ -417,19 +486,35 @@ const ComissaoGatilho = () => {
           </Alert>
         )}
 
+        {persistenceError && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>Dados exibidos, mas não salvos: {persistenceError}</AlertDescription>
+          </Alert>
+        )}
+
+        {historyError && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>
+              Não foi possível restaurar os dados salvos: {historyError}. Você ainda pode atualizar usando a busca.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Card>
           <CardHeader className="p-4 pb-2 sm:p-5 sm:pb-3">
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <BadgeDollarSign className="size-4 text-primary" />
-                  Comissão e gatilho
+                  Contratos por serviço
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {COMISSAO_CITY}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{tecnicosMapeados.length} técnicos mapeados</Badge>
                 <Badge variant="secondary">{servicosMapeados.length} serviços mapeados</Badge>
                 {hasData && (
@@ -437,10 +522,14 @@ const ComissaoGatilho = () => {
                     {formatDateBR(response.data_ini)} até {formatDateBR(response.data_fim)}
                   </Badge>
                 )}
+                <Button type="button" variant="outline" size="sm" onClick={() => setReportsOpen(true)}>
+                  <FileBarChart2 className="size-4" />
+                  Relatórios
+                </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="grid gap-3 p-4 pt-2 sm:p-5 sm:pt-2 xl:grid-cols-[minmax(150px,0.8fr)_minmax(150px,0.8fr)_minmax(220px,1.35fr)_minmax(260px,1.65fr)_auto]">
+          <CardContent className="grid gap-3 p-4 pt-2 sm:p-5 sm:pt-2 xl:grid-cols-[minmax(150px,0.8fr)_minmax(150px,0.8fr)_minmax(280px,1.65fr)_minmax(220px,1.35fr)_auto]">
             <div className="space-y-1.5">
               <Label htmlFor="comissao-data-inicial">Data inicial</Label>
               <Input
@@ -460,16 +549,6 @@ const ComissaoGatilho = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="comissao-tecnicos">Técnico</Label>
-              <MultiSelectCombobox
-                id="comissao-tecnicos"
-                options={tecnicoOptions}
-                selected={selectedTecnicos}
-                onChange={setSelectedTecnicos}
-                placeholder={loadingMappings ? 'Carregando...' : 'Todos'}
-              />
-            </div>
-            <div className="space-y-1.5">
               <Label htmlFor="comissao-servicos">Serviço</Label>
               <MultiSelectCombobox
                 id="comissao-servicos"
@@ -479,12 +558,22 @@ const ComissaoGatilho = () => {
                 placeholder={loadingMappings ? 'Carregando...' : 'Todos'}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="comissao-tecnicos">Técnico</Label>
+              <MultiSelectCombobox
+                id="comissao-tecnicos"
+                options={tecnicoOptions}
+                selected={selectedTecnicos}
+                onChange={setSelectedTecnicos}
+                placeholder={loadingMappings ? 'Carregando...' : 'Todos'}
+              />
+            </div>
             <div className="flex items-end gap-2">
               <Button
                 type="button"
                 onClick={clearFilters}
                 variant="outline"
-                disabled={!hasActiveFilters || loadingApi}
+                disabled={!hasActiveFilters || loadingApi || loadingSaved}
                 className="min-w-10"
                 title="Limpar filtros"
               >
@@ -494,7 +583,7 @@ const ComissaoGatilho = () => {
               <Button
                 type="button"
                 onClick={handleBuscar}
-                disabled={!isCommissionCity || loadingApi}
+                disabled={!isCommissionCity || loadingApi || loadingSaved}
                 className="min-w-32"
               >
                 {loadingApi ? <RefreshCw className="size-4 animate-spin" /> : <Search className="size-4" />}
@@ -508,16 +597,18 @@ const ComissaoGatilho = () => {
           <Alert>
             <AlertCircle className="size-4" />
             <AlertDescription>
-              Há {missingTechnicians} técnico(s) e {missingServices} serviço(s) da API sem correlação no banco. Eles entram nos totais, mas não aparecem nos filtros mapeados.
+              Há {missingTechnicians} técnico(s) e {missingServices} serviço(s) da API sem correlação no banco. Eles continuam disponíveis pelos nomes e IDs recebidos da API.
             </AlertDescription>
           </Alert>
         )}
 
-        {loadingApi ? (
+        {loadingApi || loadingSaved ? (
           <DashboardLoadingState
             cards={5}
-            title="Buscando comissão"
-            description="Consultando a API do Imperium e cruzando com os mapeamentos do Supabase."
+            title={loadingSaved ? 'Carregando comissão salva' : 'Buscando comissão'}
+            description={loadingSaved
+              ? 'Restaurando a competência mais recente diretamente do Supabase.'
+              : 'Consultando a API do Imperium e cruzando com os mapeamentos do Supabase.'}
           />
         ) : !hasData ? (
           <Card>
@@ -526,7 +617,7 @@ const ComissaoGatilho = () => {
               <div>
                 <h2 className="text-base font-semibold text-foreground">Selecione o período</h2>
                 <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                  Os dados aparecem depois da busca na API de comissão.
+                  Os dados salvos aparecem automaticamente. Use a busca para atualizar a competência pela API.
                 </p>
               </div>
             </CardContent>
@@ -534,60 +625,70 @@ const ComissaoGatilho = () => {
         ) : (
           <>
             <div className="grid grid-cols-1 dashboard-grid-gap sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <KPICard title="Técnicos" value={String(totals.tecnicos)} subtitle="com dados no período" icon={Users} color="primary" />
               <KPICard title="Contratos" value={formatNumber(totals.contratos)} subtitle="QtdContrato filtrado" icon={ClipboardList} color="success" />
-              <KPICard title="OS" value={formatNumber(totals.os)} subtitle="QtdOs filtrado" icon={PackageCheck} color="warning" />
               <KPICard title="Serviços" value={String(totals.servicos)} subtitle="tipos analisados" icon={PackageCheck} color="primary" />
-              <KPICard title="Pontos resumo" value={`${formatNumber(totals.pontosResumo, 2)} pts`} subtitle="TotalValor por técnico" icon={BadgeDollarSign} color="success" />
-              <KPICard title="Valor filtrado" value={`${formatNumber(totals.valorFiltrado, 2)} pts`} subtitle="soma por serviço" icon={BadgeDollarSign} color="destructive" />
+              <KPICard title="Técnicos" value={String(totals.tecnicos)} subtitle="com produção no filtro" icon={Users} color="primary" />
+              <KPICard title="Média por técnico" value={formatNumber(totals.mediaPorTecnico, 1)} subtitle="contratos por técnico" icon={Users} color="success" />
+              <KPICard title="OS" value={formatNumber(totals.os)} subtitle="QtdOs filtrado" icon={PackageCheck} color="warning" />
+              <KPICard title="Pontos" value={formatNumber(totals.valorFiltrado, 2)} subtitle="valor dos serviços filtrados" icon={BadgeDollarSign} color="destructive" />
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.25fr_0.9fr]">
-              <Card>
+              <Card id="producao-por-tecnico" className="scroll-mt-20">
                 <CardHeader className="p-4 pb-2 sm:p-5 sm:pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Users className="size-4 text-primary" />
-                    Ranking de técnicos
-                  </CardTitle>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Users className="size-4 text-primary" />
+                        Produção por técnico
+                      </CardTitle>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {selectedServicos.length > 0
+                          ? selectedServicos.join(', ')
+                          : 'Todos os serviços. Selecione um serviço para detalhar.'}
+                      </p>
+                    </div>
+                    <Badge variant={selectedServicos.length > 0 ? 'default' : 'secondary'}>
+                      {producaoTecnicos.length} técnicos
+                    </Badge>
+                  </div>
                 </CardHeader>
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Técnico</TableHead>
+                        <TableHead>Técnico / ID</TableHead>
                         <TableHead>Login</TableHead>
+                        <TableHead className="text-right">Serviços</TableHead>
                         <TableHead className="text-right">Contratos</TableHead>
                         <TableHead className="text-right">OS</TableHead>
                         <TableHead className="text-right">Pontos</TableHead>
-                        <TableHead className="text-right">Valor serv.</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {rankingTecnicos.length === 0 ? (
+                      {producaoTecnicos.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                             Sem dados para os filtros atuais.
                           </TableCell>
                         </TableRow>
                       ) : (
-                        rankingTecnicos.slice(0, 20).map((row) => (
+                        producaoTecnicos.map((row) => (
                           <TableRow key={row.idInstalador}>
                             <TableCell>
-                              <div className="min-w-[180px]">
+                              <div className="min-w-[220px]">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="font-semibold text-foreground">{row.tecnico}</span>
-                                  <Badge variant={row.mapeado ? 'secondary' : 'outline'}>
-                                    {row.mapeado ? 'Mapeado' : `ID ${row.idInstalador}`}
-                                  </Badge>
+                                  <Badge variant={row.mapeado ? 'secondary' : 'outline'}>ID {row.idInstalador}</Badge>
                                 </div>
-                                <p className="mt-1 text-xs text-muted-foreground">API: {row.nomeApi}</p>
+                                {!row.mapeado && <p className="mt-1 text-xs text-muted-foreground">API: {row.nomeApi}</p>}
                               </div>
                             </TableCell>
                             <TableCell>{row.login}</TableCell>
-                            <TableCell className="text-right font-semibold">{formatNumber(row.contratos)}</TableCell>
+                            <TableCell className="text-right">{formatNumber(row.servicos)}</TableCell>
+                            <TableCell className="text-right text-base font-bold">{formatNumber(row.contratos)}</TableCell>
                             <TableCell className="text-right">{formatNumber(row.os)}</TableCell>
-                            <TableCell className="text-right font-semibold">{formatNumber(row.pontosResumo, 2)}</TableCell>
-                            <TableCell className="text-right">{formatNumber(row.valorFiltrado, 2)}</TableCell>
+                            <TableCell className="text-right">{formatNumber(row.valor, 2)}</TableCell>
                           </TableRow>
                         ))
                       )}
@@ -598,10 +699,16 @@ const ComissaoGatilho = () => {
 
               <Card>
                 <CardHeader className="p-4 pb-2 sm:p-5 sm:pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <PackageCheck className="size-4 text-primary" />
-                    Contratos por serviço
-                  </CardTitle>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <PackageCheck className="size-4 text-primary" />
+                        Contratos por serviço
+                      </CardTitle>
+                      <p className="mt-1 text-xs text-muted-foreground">Clique em um serviço para detalhar os técnicos.</p>
+                    </div>
+                    <Badge variant="secondary">Top 10</Badge>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4 p-4 sm:p-5">
                   {servicosAgregados.length === 0 ? (
@@ -609,8 +716,22 @@ const ComissaoGatilho = () => {
                   ) : (
                     servicosAgregados.slice(0, 10).map((servico) => {
                       const width = Math.max(8, (servico.contratos / maxContratosServico) * 100);
+                      const mapped = servicoByComissionamentoId.get(servico.idComissionamento);
+                      const label = mapped
+                        ? servicoOptionLabel(mapped)
+                        : `${servico.idComissionamento} - ${servico.produto}`;
+                      const selected = selectedServicos.includes(label);
                       return (
-                        <div key={servico.idComissionamento} className="space-y-2">
+                        <button
+                          key={servico.idComissionamento}
+                          type="button"
+                          onClick={() => handleFocusServico(servico)}
+                          aria-pressed={selected}
+                          className={cn(
+                            'block w-full cursor-pointer space-y-2 rounded-md p-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            selected && 'bg-primary/5 ring-1 ring-primary/30',
+                          )}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-foreground">{servico.produto}</p>
@@ -626,7 +747,7 @@ const ComissaoGatilho = () => {
                           <div className="h-2 rounded-full bg-muted">
                             <div className="h-2 rounded-full bg-primary" style={{ width: `${width}%` }} />
                           </div>
-                        </div>
+                        </button>
                       );
                     })
                   )}
@@ -636,10 +757,18 @@ const ComissaoGatilho = () => {
 
             <Card>
               <CardHeader className="p-4 pb-2 sm:p-5 sm:pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ClipboardList className="size-4 text-primary" />
-                  Serviços detalhados
-                </CardTitle>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ClipboardList className="size-4 text-primary" />
+                      Todos os serviços
+                    </CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Compare contratos, técnicos e a média de produção antes de abrir o detalhamento.
+                    </p>
+                  </div>
+                  <Badge variant="secondary">{servicosAgregados.length} serviços</Badge>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
@@ -647,37 +776,62 @@ const ComissaoGatilho = () => {
                     <TableRow>
                       <TableHead>Serviço</TableHead>
                       <TableHead className="text-right">Contratos</TableHead>
-                      <TableHead className="text-right">OS</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
                       <TableHead className="text-right">Técnicos</TableHead>
+                      <TableHead className="text-right">Média/técnico</TableHead>
+                      <TableHead className="text-right">OS</TableHead>
+                      <TableHead className="text-right">Pontos</TableHead>
+                      <TableHead className="text-right">Detalhar</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {servicosAgregados.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                        <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                           Sem dados para os filtros atuais.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      servicosAgregados.map((servico) => (
-                        <TableRow key={servico.idComissionamento}>
-                          <TableCell>
-                            <div className="min-w-[240px]">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-semibold text-foreground">{servico.produto}</span>
-                                <Badge variant={servico.mapeado ? 'secondary' : 'outline'}>
-                                  {servico.mapeado ? 'Mapeado' : `ID ${servico.idComissionamento}`}
-                                </Badge>
+                      servicosAgregados.map((servico) => {
+                        const mapped = servicoByComissionamentoId.get(servico.idComissionamento);
+                        const label = mapped
+                          ? servicoOptionLabel(mapped)
+                          : `${servico.idComissionamento} - ${servico.produto}`;
+                        const selected = selectedServicos.includes(label);
+
+                        return (
+                          <TableRow key={servico.idComissionamento} data-state={selected ? 'selected' : undefined}>
+                            <TableCell>
+                              <div className="min-w-[280px]">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-semibold text-foreground">{servico.produto}</span>
+                                  <Badge variant={servico.mapeado ? 'secondary' : 'outline'}>
+                                    {servico.mapeado ? `ID ${servico.idComissionamento}` : `API · ID ${servico.idComissionamento}`}
+                                  </Badge>
+                                </div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">{formatNumber(servico.contratos)}</TableCell>
-                          <TableCell className="text-right">{formatNumber(servico.os)}</TableCell>
-                          <TableCell className="text-right">{formatNumber(servico.valor, 2)}</TableCell>
-                          <TableCell className="text-right">{formatNumber(servico.tecnicos)}</TableCell>
-                        </TableRow>
-                      ))
+                            </TableCell>
+                            <TableCell className="text-right text-base font-bold">{formatNumber(servico.contratos)}</TableCell>
+                            <TableCell className="text-right">{formatNumber(servico.tecnicos)}</TableCell>
+                            <TableCell className="text-right">
+                              {formatNumber(servico.tecnicos > 0 ? servico.contratos / servico.tecnicos : 0, 1)}
+                            </TableCell>
+                            <TableCell className="text-right">{formatNumber(servico.os)}</TableCell>
+                            <TableCell className="text-right">{formatNumber(servico.valor, 2)}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={selected ? 'secondary' : 'outline'}
+                                onClick={() => handleFocusServico(servico)}
+                                aria-pressed={selected}
+                              >
+                                <Users className="size-4" />
+                                {selected ? 'Selecionado' : 'Ver técnicos'}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -686,6 +840,12 @@ const ComissaoGatilho = () => {
           </>
         )}
       </main>
+
+      <ComissaoReportsDialog
+        open={reportsOpen}
+        onOpenChange={setReportsOpen}
+        cidade={COMISSAO_CITY}
+      />
     </div>
   );
 };
