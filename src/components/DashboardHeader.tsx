@@ -113,7 +113,7 @@ const DashboardHeader: React.FC = () => {
         <div className={cn('relative flex h-16 items-center gap-3 bg-primary', sidebarCollapsed ? 'justify-center px-2' : 'px-5')}>
           <img src={logo} alt="TechNET" className="size-8 rounded-md bg-white object-cover" />
           {!sidebarCollapsed && <div className="min-w-0">
-            <p className="truncate font-display text-lg font-bold leading-tight">Indicadores TEC</p>
+            <p className="truncate font-display text-lg font-bold leading-tight">Indicadores</p>
           </div>}
           <button
             type="button"
