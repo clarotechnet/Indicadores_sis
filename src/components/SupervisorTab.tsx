@@ -139,14 +139,14 @@ const SupervisorTab: React.FC<SupervisorTabProps> = ({ data, isDateFiltered = fa
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <RankingList title="Top 5 Supervisores" items={top5} type="best" />
-        <RankingList title="Bottom 5 Supervisores" items={bottom5} type="worst" />
+        <RankingList title="Indicadores de supervisores" items={top5} type="best" />
+        <RankingList title="Indicadores de supervisores" items={bottom5} type="worst" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
         <Card className="shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ranking por Supervisor</CardTitle>
+            <CardTitle className="text-sm font-medium">Resultados por supervisor</CardTitle>
           </CardHeader>
           <CardContent className="px-2 sm:px-6">
             <ResponsiveContainer width="100%" height={280}>

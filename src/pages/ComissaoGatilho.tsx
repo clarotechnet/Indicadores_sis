@@ -707,7 +707,6 @@ const ComissaoGatilho = () => {
                       </CardTitle>
                       <p className="mt-1 text-xs text-muted-foreground">Clique em um serviço para detalhar os técnicos.</p>
                     </div>
-                    <Badge variant="secondary">Top 10</Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4 p-4 sm:p-5">

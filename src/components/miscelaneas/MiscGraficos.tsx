@@ -212,7 +212,7 @@ const MiscGraficos: React.FC<Props> = ({ data }) => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Top Ofensor</CardTitle>
+            <CardTitle className="text-base">Ocorrências por técnico</CardTitle>
           </CardHeader>
           <CardContent className="flex h-[130px] flex-col items-center justify-center text-center">
             <span className="font-display text-4xl font-bold text-destructive">{topOfensor.total}</span>

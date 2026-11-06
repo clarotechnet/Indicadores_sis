@@ -84,14 +84,14 @@ const lineData = Object.entries(byDate)
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <RankingList title={`Top 5 - ${label}`} items={top5} type="best" invertido={invertido} />
-        <RankingList title={`Bottom 5 - ${label}`} items={bottom5} type="worst" invertido={invertido} />
+        <RankingList title={label} items={top5} type="best" invertido={invertido} />
+        <RankingList title={label} items={bottom5} type="worst" invertido={invertido} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
         <Card className="shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ranking por Técnico</CardTitle>
+            <CardTitle className="text-sm font-medium">Resultados por técnico</CardTitle>
           </CardHeader>
           <CardContent className="px-2 sm:px-6">
             <div className="h-[280px] overflow-y-auto pr-2">

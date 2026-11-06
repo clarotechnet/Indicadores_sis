@@ -202,8 +202,8 @@ const ComparativoHroTab: React.FC<ComparativoHroTabProps> = ({ horarioData }) =>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <RankingListComparativo title="Top 5 - Mais Cedo" items={top5} type="best" />
-        <RankingListComparativo title="Bottom 5 - Mais Tarde" items={bottom5} type="worst" />
+        <RankingListComparativo title="Horários de entrada" items={top5} type="best" />
+        <RankingListComparativo title="Horários de entrada" items={bottom5} type="worst" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
@@ -306,9 +306,6 @@ interface RankingListComparativoProps {
 }
 
 const RankingListComparativo: React.FC<RankingListComparativoProps> = ({ title, items, type }) => {
-  const Icon = type === 'best' ? CheckCircle : XCircle;
-  const iconColor = type === 'best' ? 'text-success' : 'text-destructive';
-
   const minMinutos = 460;
   const maxMinutos = 510;
 
@@ -321,7 +318,7 @@ const RankingListComparativo: React.FC<RankingListComparativoProps> = ({ title, 
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${iconColor}`} />
+          <Clock className="h-4 w-4 text-muted-foreground" />
           {title}
         </CardTitle>
       </CardHeader>
@@ -331,11 +328,6 @@ const RankingListComparativo: React.FC<RankingListComparativoProps> = ({ title, 
         ) : (
           items.map((item, i) => (
             <div key={i} className="flex items-center gap-2 sm:gap-3">
-              <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${
-                type === 'best' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
-              }`}>
-                {i + 1}
-              </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-xs sm:text-sm truncate text-foreground">{item.nome}</span>

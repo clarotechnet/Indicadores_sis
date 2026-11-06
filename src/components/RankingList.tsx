@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, Trophy } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface RankingItem {
@@ -17,7 +17,6 @@ interface RankingListProps {
 }
 
 const RankingList: React.FC<RankingListProps> = ({ title, items, type, suffix = '%', invertido = false }) => {
-  const Icon = type === 'best' ? Trophy : AlertTriangle;
   const isBest = type === 'best';
 
   const getBarWidth = (valor: number) => {
@@ -32,7 +31,7 @@ const RankingList: React.FC<RankingListProps> = ({ title, items, type, suffix = 
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <span className={cn('flex size-7 items-center justify-center rounded-md', isBest ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive')}>
-            <Icon className="size-4" />
+            <BarChart3 className="size-4" />
           </span>
           {title}
         </CardTitle>
@@ -43,12 +42,6 @@ const RankingList: React.FC<RankingListProps> = ({ title, items, type, suffix = 
         ) : (
           items.map((item, i) => (
             <div key={`${item.nome}-${i}`} className="flex items-center gap-3 rounded-md border border-transparent px-2 py-2 transition-colors hover:border-border hover:bg-muted/40">
-              <span className={cn(
-                'flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                isBest ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive',
-              )}>
-                {i + 1}
-              </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
                   <span className="truncate text-sm font-medium text-foreground">{item.nome}</span>

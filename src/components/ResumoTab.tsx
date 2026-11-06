@@ -479,17 +479,13 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
 
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between gap-3 pb-2">
-            <CardTitle className="text-sm font-semibold">Ranking de supervisores</CardTitle>
-            <Badge variant="secondary" className="rounded-md">
-              Top 5
-            </Badge>
+            <CardTitle className="text-sm font-semibold">Indicadores de supervisores</CardTitle>
           </CardHeader>
           <CardContent>
             {supervisorRows.length > 0 ? (
               <div className="space-y-3">
-                {supervisorRows.slice(0, 5).map((row, index) => (
-                  <div key={row.supervisor} className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 text-sm">
-                    <span className="text-xs font-semibold text-muted-foreground">{index + 1}</span>
+                {supervisorRows.slice(0, 5).map((row) => (
+                  <div key={row.supervisor} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
                     <div className="min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate font-medium text-foreground">{row.supervisor}</p>
@@ -521,7 +517,6 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">#</TableHead>
                 <TableHead>Técnico</TableHead>
                 <TableHead>Supervisor</TableHead>
                 <TableHead className="text-right">Média</TableHead>
@@ -530,9 +525,8 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
               </TableRow>
             </TableHeader>
             <TableBody>
-              {technicianRows.slice(0, 10).map((row, index) => (
+              {technicianRows.slice(0, 10).map((row) => (
                 <TableRow key={row.login}>
-                  <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
                   <TableCell>
                     <div className="min-w-0">
                       <p className="truncate font-medium text-foreground">{row.tecnico}</p>
@@ -560,7 +554,7 @@ const ResumoTab: React.FC<ResumoTabProps> = ({ data, cidade, isDateFiltered = fa
               ))}
               {technicianRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                     Sem dados para o filtro atual.
                   </TableCell>
                 </TableRow>

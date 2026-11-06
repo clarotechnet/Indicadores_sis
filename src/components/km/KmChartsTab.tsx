@@ -87,7 +87,7 @@ const KmChartsTab: React.FC<KmChartsTabProps> = ({ data, transporteMap, hasActiv
         {/* Top 10 KM */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Top 10 - KM Percorrido</CardTitle>
+            <CardTitle className="text-sm">KM percorrido</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>

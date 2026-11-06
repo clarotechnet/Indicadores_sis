@@ -133,8 +133,8 @@ const HorarioTab: React.FC<HorarioTabProps> = ({ data, isDateFiltered = false })
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <RankingListHorario title={isDateFiltered ? 'Top 5 - Média Mais Cedo' : 'Top 5 - Mais Cedo'} items={top5} type="best" />
-        <RankingListHorario title={isDateFiltered ? 'Bottom 5 - Média Mais Tarde' : 'Bottom 5 - Mais Tarde'} items={bottom5} type="worst" />
+        <RankingListHorario title={isDateFiltered ? 'Média de horários' : 'Horários registrados'} items={top5} type="best" />
+        <RankingListHorario title={isDateFiltered ? 'Média de horários' : 'Horários registrados'} items={bottom5} type="worst" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
@@ -188,9 +188,6 @@ interface RankingListHorarioProps {
 }
 
 const RankingListHorario: React.FC<RankingListHorarioProps> = ({ title, items, type }) => {
-  const Icon = type === 'best' ? CheckCircle : XCircle;
-  const iconColor = type === 'best' ? 'text-success' : 'text-destructive';
-
   const minMinutos = 470;
   const maxMinutos = 500;
 
@@ -203,7 +200,7 @@ const RankingListHorario: React.FC<RankingListHorarioProps> = ({ title, items, t
     <Card className="shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${iconColor}`} />
+          <Clock className="h-4 w-4 text-muted-foreground" />
           {title}
         </CardTitle>
       </CardHeader>
@@ -213,11 +210,6 @@ const RankingListHorario: React.FC<RankingListHorarioProps> = ({ title, items, t
         ) : (
           items.map((item, i) => (
             <div key={i} className="flex items-center gap-2 sm:gap-3">
-              <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full shrink-0 ${
-                type === 'best' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
-              }`}>
-                {i + 1}
-              </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-xs sm:text-sm truncate text-foreground">{item.nome}</span>
