@@ -32,6 +32,7 @@ export type DadoTecnico = {
   cidade: string;
   supervisor: string;
   ativo: boolean;
+  frente?: string | null;
 };
 
 export type Supervisor = {

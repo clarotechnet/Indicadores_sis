@@ -76,22 +76,6 @@ export const fetchDashboardPages = async <T,>(
   }
 };
 
-const applyCommonFilters = <T extends {
-  eq: (column: string, value: string) => T;
-  gte: (column: string, value: string) => T;
-  lte: (column: string, value: string) => T;
-  abortSignal: (signal: AbortSignal) => T;
-}>(query: T, options: DashboardQueryOptions): T => {
-  let filteredQuery = query;
-
-  if (options.loginTecnico) filteredQuery = filteredQuery.eq('login', options.loginTecnico);
-  if (options.dataInicial) filteredQuery = filteredQuery.gte('data_referencia', options.dataInicial);
-  if (options.dataFinal) filteredQuery = filteredQuery.lte('data_referencia', options.dataFinal);
-  if (options.signal) filteredQuery = filteredQuery.abortSignal(options.signal);
-
-  return filteredQuery;
-};
-
 export const fetchIndicatorRows = (options: DashboardQueryOptions): Promise<IndicadorTecnico[]> =>
   fetchDashboardPages<IndicadorTecnico>(async (from, to) => {
     let query = supabase
@@ -103,13 +87,18 @@ export const fetchIndicatorRows = (options: DashboardQueryOptions): Promise<Indi
       .order('id', { ascending: true })
       .range(from, to);
 
-    query = applyCommonFilters(query, options);
+    if (options.loginTecnico) query = query.eq('login', options.loginTecnico);
+    if (options.dataInicial) query = query.gte('data_referencia', options.dataInicial);
+    if (options.dataFinal) query = query.lte('data_referencia', options.dataFinal);
+    if (options.signal) query = query.abortSignal(options.signal);
+
     const { data, error } = await query;
 
     if (error) throw new Error(`Erro ao buscar indicadores_tecnicos: ${error.message}`);
     return (data ?? []) as unknown as IndicadorTecnico[];
   });
 
+  
 export const fetchScheduleRows = (options: DashboardQueryOptions): Promise<HorarioPrimeiroCliente[]> =>
   fetchDashboardPages<HorarioPrimeiroCliente>(async (from, to) => {
     let query = supabase
@@ -121,7 +110,11 @@ export const fetchScheduleRows = (options: DashboardQueryOptions): Promise<Horar
       .order('id', { ascending: true })
       .range(from, to);
 
-    query = applyCommonFilters(query, options);
+    if (options.loginTecnico) query = query.eq('login', options.loginTecnico);
+    if (options.dataInicial) query = query.gte('data_referencia', options.dataInicial);
+    if (options.dataFinal) query = query.lte('data_referencia', options.dataFinal);
+    if (options.signal) query = query.abortSignal(options.signal);
+
     const { data, error } = await query;
 
     if (error) throw new Error(`Erro ao buscar horario_primeiro_cliente: ${error.message}`);

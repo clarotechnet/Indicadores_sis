@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCity } from '@/contexts/CityContext';
 import { formatDatePtBr, getCurrentMonthDateRange } from '@/lib/dateFilters';
 import { isKmServiceOrder } from '@/lib/kmMetrics';
+import { applyKmFronts, createTechnicianFrontMap, MISSING_KM_FRONT } from '@/lib/kmFronts';
 import { fetchKmMapRows, fetchKmSummaryRows, shouldRetryKmQuery } from '@/lib/kmQueries';
 import { supabase } from '@/lib/supabase';
 import type { DadoTecnico, KmTecnica, TransporteTecnico } from '@/types/database';
@@ -107,7 +108,7 @@ const KmRotas = () => {
     queryFn: async ({ signal }) => {
       let query = supabase
         .from('dados_tecnicos')
-        .select('login,nome,cidade,supervisor,ativo')
+        .select('*')
         .eq('cidade', selectedCity!)
         .eq('ativo', true);
 
@@ -153,8 +154,13 @@ const KmRotas = () => {
 
   const visibleData = useMemo(() => {
     const activeLogins = new Set(dadosTecnicos.map((tecnico) => tecnico.login.trim().toUpperCase()));
-    return data.filter((row) => activeLogins.has(row.login_tecnico?.trim().toUpperCase() || ''));
+    const rows = data.filter((row) => activeLogins.has(row.login_tecnico?.trim().toUpperCase() || ''));
+    return applyKmFronts(rows, createTechnicianFrontMap(dadosTecnicos));
   }, [data, dadosTecnicos]);
+
+  const techniciansWithoutFront = useMemo(() => new Set(
+    visibleData.filter((row) => row.frente === MISSING_KM_FRONT).map((row) => row.login_tecnico),
+  ).size, [visibleData]);
 
   const latestKmDate = useMemo(
     () => visibleData.reduce((latest, row) => (row.data > latest ? row.data : latest), ''),
@@ -202,7 +208,6 @@ const KmRotas = () => {
       filters.dataInicial,
       filters.dataFinal,
       mapLogins,
-      filters.frentes,
     ],
     queryFn: ({ signal }) => fetchKmMapRows({
       cidade: selectedCity!,
@@ -210,7 +215,6 @@ const KmRotas = () => {
       dataFinal: filters.dataFinal,
       loginTecnico: technicianLogin || undefined,
       logins: mapLogins,
-      frentes: filters.frentes,
       signal,
     }),
     enabled: shouldLoadMap,
@@ -218,7 +222,10 @@ const KmRotas = () => {
     retry: shouldRetryKmQuery,
   });
 
-  const mapData = mapQuery.data ?? EMPTY_KM_ROWS;
+  const mapData = useMemo(() => (
+    applyKmFronts(mapQuery.data ?? EMPTY_KM_ROWS, createTechnicianFrontMap(dadosTecnicos))
+      .filter((row) => filters.frentes.length === 0 || filters.frentes.includes(row.frente))
+  ), [mapQuery.data, dadosTecnicos, filters.frentes]);
 
   const loadData = async () => {
     const requests = [kmQuery.refetch(), transportesQuery.refetch(), dadosTecnicosQuery.refetch()];
@@ -341,6 +348,15 @@ const KmRotas = () => {
           <Alert variant="destructive">
             <AlertCircle className="size-4" />
             <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
+
+        {!loadingData && techniciansWithoutFront > 0 && (
+          <Alert>
+            <AlertCircle className="size-4" />
+            <AlertDescription>
+              {techniciansWithoutFront} técnico(s) sem frente cadastrada e sem frente no arquivo.
+            </AlertDescription>
           </Alert>
         )}
 

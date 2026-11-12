@@ -39,7 +39,6 @@ interface KmQueryOptions {
   dataFinal?: string;
   loginTecnico?: string;
   logins?: string[];
-  frentes?: string[];
   signal?: AbortSignal;
 }
 
@@ -68,7 +67,6 @@ const fetchKmPages = async (
     if (options.dataFinal) query = query.lte('data', options.dataFinal);
     if (options.loginTecnico) query = query.eq('login_tecnico', options.loginTecnico);
     if (options.logins?.length) query = query.in('login_tecnico', options.logins);
-    if (options.frentes?.length) query = query.in('frente', options.frentes);
     if (cursor) {
       query = query.or(`data.gt.${cursor.data},and(data.eq.${cursor.data},id.gt.${cursor.id})`);
     }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, MapPin, Plus, RefreshCw, Search, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -29,9 +30,11 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCity } from '@/contexts/CityContext';
 import { supabase } from '@/lib/supabase';
+import { normalizeKmFront, TECHNICIAN_FRONT_OPTIONS } from '@/lib/kmFronts';
 import { type DadoTecnico, type Supervisor } from '@/types/database';
 
 const ALL_FILTER = '__all__';
+const NO_FRONT = '__none__';
 
 const normalize = (value: string) => value.trim().toLocaleUpperCase('pt-BR');
 const getTechnicianKey = (tecnico: DadoTecnico) => `${normalize(tecnico.cidade)}:${normalize(tecnico.login)}`;
@@ -61,6 +64,34 @@ const TechnicianStatusToggle = ({ tecnico, saving, onChange }: TechnicianStatusT
       {tecnico.ativo ? 'Ativo' : 'Inativo'}
     </span>
     {saving && <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-label="Salvando status" />}
+  </div>
+);
+
+type TechnicianFrontSelectProps = {
+  name: string;
+  value?: string | null;
+  options: string[];
+  saving: boolean;
+  onChange: (frente: string | null) => void;
+  id?: string;
+};
+
+const TechnicianFrontSelect = ({ name, value, options, saving, onChange, id }: TechnicianFrontSelectProps) => (
+  <div className="flex items-center gap-2">
+    <Select
+      value={normalizeKmFront(value) || NO_FRONT}
+      onValueChange={(frente) => onChange(frente === NO_FRONT ? null : frente)}
+      disabled={saving}
+    >
+      <SelectTrigger id={id} aria-label={`Frente de ${name}`} className="w-full min-w-[190px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_FRONT}>Sem frente cadastrada</SelectItem>
+        {options.map((frente) => <SelectItem key={frente} value={frente}>{frente}</SelectItem>)}
+      </SelectContent>
+    </Select>
+    {saving && <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-label="Salvando frente" />}
   </div>
 );
 
@@ -111,6 +142,7 @@ const SupervisorAssignmentSelect = ({
 
 const SupervisorManagementTab = () => {
   const { selectedCity } = useCity();
+  const queryClient = useQueryClient();
   const [tecnicos, setTecnicos] = useState<DadoTecnico[]>([]);
   const [supervisores, setSupervisores] = useState<Supervisor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,6 +157,7 @@ const SupervisorManagementTab = () => {
     login: '',
     nome: '',
     supervisorId: '',
+    frente: null as string | null,
   });
   const [search, setSearch] = useState('');
   const [supervisorFiltroId, setSupervisorFiltroId] = useState(ALL_FILTER);
@@ -183,7 +216,7 @@ const SupervisorManagementTab = () => {
     return tecnicos.filter((tecnico) => {
       const matchSupervisor = !supervisorSelecionado
         || normalize(tecnico.supervisor || '') === supervisorSelecionado.nome_normalizado;
-      const matchBusca = !term || [tecnico.login, tecnico.nome, tecnico.supervisor, tecnico.cidade]
+      const matchBusca = !term || [tecnico.login, tecnico.nome, tecnico.supervisor, tecnico.cidade, tecnico.frente]
         .some((value) => value?.toLocaleLowerCase('pt-BR').includes(term));
 
       return matchSupervisor && matchBusca;
@@ -194,6 +227,38 @@ const SupervisorManagementTab = () => {
     () => tecnicos.filter((tecnico) => tecnico.ativo).length,
     [tecnicos],
   );
+
+  const frenteOptions = useMemo(() => [...new Set([
+    ...TECHNICIAN_FRONT_OPTIONS,
+    ...tecnicos.map((tecnico) => normalizeKmFront(tecnico.frente)).filter(Boolean),
+  ])].sort((a, b) => a.localeCompare(b, 'pt-BR')), [tecnicos]);
+
+  const updateTechnicianFront = async (tecnico: DadoTecnico, frente: string | null) => {
+    if (normalizeKmFront(tecnico.frente) === normalizeKmFront(frente)) return;
+
+    setSavingTecnicoKey(getTechnicianKey(tecnico));
+    try {
+      const { data, error } = await supabase
+        .from('dados_tecnicos')
+        .update({ frente })
+        .eq('login', tecnico.login)
+        .eq('cidade', tecnico.cidade)
+        .select('login,cidade,frente');
+
+      if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error('O cadastro não foi atualizado. Verifique a permissão de acesso.');
+
+      setTecnicos((current) => current.map((item) => (
+        getTechnicianKey(item) === getTechnicianKey(tecnico) ? { ...item, frente } : item
+      )));
+      await queryClient.invalidateQueries({ queryKey: ['dados-tecnicos-km'] });
+      toast.success(`Frente de ${tecnico.nome} atualizada.`);
+    } catch (error) {
+      toast.error(`Não foi possível atualizar ${tecnico.nome}: ${error instanceof Error ? error.message : 'Erro ao salvar frente.'}`);
+    } finally {
+      setSavingTecnicoKey(null);
+    }
+  };
 
   const updateTechnicianSupervisor = async (tecnico: DadoTecnico, supervisor: string) => {
     if (normalize(tecnico.supervisor || '') === normalize(supervisor)) return;
@@ -247,7 +312,7 @@ const SupervisorManagementTab = () => {
   };
 
   const openNewTechnicianDialog = () => {
-    setNewTechnician({ login: '', nome: '', supervisorId: '' });
+    setNewTechnician({ login: '', nome: '', supervisorId: '', frente: null });
     setTechnicianDialogOpen(true);
   };
 
@@ -292,6 +357,7 @@ const SupervisorManagementTab = () => {
         supervisor: supervisor.nome,
         cidade: selectedCity,
         ativo: true,
+        ...(newTechnician.frente ? { frente: newTechnician.frente } : {}),
       })
       .select('*')
       .single();
@@ -361,7 +427,7 @@ const SupervisorManagementTab = () => {
                 Técnicos e supervisores
               </CardTitle>
               <CardDescription className="mt-1">
-                Atualize a referência de supervisor usada nas próximas importações de indicadores.
+                Supervisores, frentes e situação dos técnicos de {selectedCity}.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -399,7 +465,7 @@ const SupervisorManagementTab = () => {
                   id="admin-tecnico-busca"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Login, nome ou supervisor"
+                  placeholder="Login, nome, supervisor ou frente"
                   className="pl-9"
                 />
               </div>
@@ -458,6 +524,17 @@ const SupervisorManagementTab = () => {
                       saving={savingTecnicoKey === getTechnicianKey(tecnico)}
                       onChange={(supervisor) => void updateTechnicianSupervisor(tecnico, supervisor)}
                     />
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`frente-mobile-${getTechnicianKey(tecnico)}`}>Frente</Label>
+                      <TechnicianFrontSelect
+                        id={`frente-mobile-${getTechnicianKey(tecnico)}`}
+                        name={tecnico.nome}
+                        value={tecnico.frente}
+                        options={frenteOptions}
+                        saving={savingTecnicoKey === getTechnicianKey(tecnico)}
+                        onChange={(frente) => void updateTechnicianFront(tecnico, frente)}
+                      />
+                    </div>
                     <TechnicianStatusToggle
                       tecnico={tecnico}
                       saving={savingTecnicoKey === getTechnicianKey(tecnico)}
@@ -475,6 +552,7 @@ const SupervisorManagementTab = () => {
                       <TableHead>Nome</TableHead>
                       <TableHead>Cidade</TableHead>
                       <TableHead>Supervisor</TableHead>
+                      <TableHead>Frente</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -495,6 +573,15 @@ const SupervisorManagementTab = () => {
                             supervisores={supervisores}
                             saving={savingTecnicoKey === getTechnicianKey(tecnico)}
                             onChange={(supervisor) => void updateTechnicianSupervisor(tecnico, supervisor)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <TechnicianFrontSelect
+                            name={tecnico.nome}
+                            value={tecnico.frente}
+                            options={frenteOptions}
+                            saving={savingTecnicoKey === getTechnicianKey(tecnico)}
+                            onChange={(frente) => void updateTechnicianFront(tecnico, frente)}
                           />
                         </TableCell>
                         <TableCell>
@@ -582,6 +669,18 @@ const SupervisorManagementTab = () => {
                   Cadastre primeiro um supervisor para esta cidade.
                 </p>
               )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="novo-tecnico-frente">Frente</Label>
+              <TechnicianFrontSelect
+                id="novo-tecnico-frente"
+                name={newTechnician.nome || 'novo técnico'}
+                value={newTechnician.frente}
+                options={frenteOptions}
+                saving={savingNewTechnician}
+                onChange={(frente) => setNewTechnician((current) => ({ ...current, frente }))}
+              />
             </div>
 
             <DialogFooter>

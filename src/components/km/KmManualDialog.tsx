@@ -105,8 +105,8 @@ const KmManualDialog: React.FC<KmManualDialogProps> = ({ open, onOpenChange, onC
             <Input value={form.endereco_destino} onChange={e => setForm(f => ({ ...f, endereco_destino: e.target.value }))} placeholder="AV NEVALDO ROCHA, 3775 - TIROL" />
           </div>
           <div>
-            <Label>Frente</Label>
-            <Input value={form.frente} onChange={e => setForm(f => ({ ...f, frente: e.target.value }))} placeholder="ADESÃO/SERVIÇO" />
+            <Label>Frente (opcional)</Label>
+            <Input value={form.frente} onChange={e => setForm(f => ({ ...f, frente: e.target.value }))} placeholder="Frente do cadastro do técnico" />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

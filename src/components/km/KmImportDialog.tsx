@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { useCity } from '@/contexts/CityContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { notifyImportCompleted } from '@/lib/notifications';
+import { kmRouteKey, normalizeKmFront } from '@/lib/kmFronts';
+import { fetchKmSummaryRows } from '@/lib/kmQueries';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 interface KmImportDialogProps {
@@ -13,17 +15,6 @@ interface KmImportDialogProps {
   onOpenChange: (open: boolean) => void;
   onImportComplete: () => void;
 }
-
-const EXPECTED_COLUMNS = [
-  'LOGIN DO TÉCNICO', 'LOGIN DO TECNICO', 'LOGIN',
-  'RECURSO',
-  'DATA',
-  'TRECHO',
-  'ENDEREÇO DESTINO', 'ENDERECO DESTINO',
-  'DISTÂNCIA (KM)', 'DISTANCIA (KM)', 'DISTÂNCIA', 'DISTANCIA', 'KM',
-  'FRENTE',
-  'CIDADE',
-];
 
 interface KmImportRow {
   login_tecnico: string;
@@ -76,18 +67,6 @@ function parseDate(val: unknown): string {
   return str;
 }
 
-function rowKey(row: Pick<KmImportRow, 'login_tecnico' | 'data' | 'trecho' | 'endereco_destino' | 'distancia_km' | 'frente' | 'cidade'>): string {
-  return [
-    row.cidade,
-    row.login_tecnico.toUpperCase(),
-    row.data,
-    row.trecho.trim().toUpperCase(),
-    row.endereco_destino.trim().toUpperCase(),
-    String(row.distancia_km),
-    row.frente.trim().toUpperCase(),
-  ].join('|');
-}
-
 const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onImportComplete }) => {
   const { selectedCity } = useCity();
   const { profile } = useAuth();
@@ -112,23 +91,22 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
       const buffer = await file.arrayBuffer();
       const wb = XLSX.read(buffer, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(ws);
+      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(ws, { defval: '' });
 
       if (jsonData.length === 0) {
         setResult({ success: 0, errors: ['Arquivo vazio.'], skipped: 0 });
         setLoading(false);
         return;
       }
-
       const rawHeaders = Object.keys(jsonData[0]);
 
-      const colLogin = findColumn(rawHeaders, 'LOGIN DO TÉCNICO', 'LOGIN DO TECNICO', 'LOGIN');
+      const colLogin = findColumn(rawHeaders, 'LOGIN DO TÉCNICO', 'LOGIN DO TECNICO', 'LOGIN','Login do Técnico', 'Login do Tecnico');
       const colRecurso = findColumn(rawHeaders, 'RECURSO');
       const colData = findColumn(rawHeaders, 'DATA');
       const colTrecho = findColumn(rawHeaders, 'TRECHO');
       const colEndereco = findColumn(rawHeaders, 'ENDEREÇO DESTINO', 'ENDERECO DESTINO');
       const colDistancia = findColumn(rawHeaders, 'DISTÂNCIA (KM)', 'DISTANCIA (KM)', 'DISTÂNCIA', 'DISTANCIA', 'KM');
-      const colFrente = findColumn(rawHeaders, 'FRENTE');
+      const colFrente = findColumn(rawHeaders, 'FRENTE', 'TIPO/SERVIÇO', 'TIPO/SERVICO');
       const colCidade = findColumn(rawHeaders, 'CIDADE');
       const colCoordOrigemX = findColumn(rawHeaders, 'COORD ORIGEM X', 'COORD_ORIGEM_X');
       const colCoordOrigemY = findColumn(rawHeaders, 'COORD ORIGEM Y', 'COORD_ORIGEM_Y');
@@ -167,7 +145,7 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
           trecho: colTrecho ? String(row[colTrecho] || '').trim() : '',
           endereco_destino: colEndereco ? String(row[colEndereco] || '').trim() : '',
           distancia_km: parseDecimal(colDistancia ? row[colDistancia] : 0),
-          frente: colFrente ? String(row[colFrente] || '').trim() : '',
+          frente: normalizeKmFront(colFrente ? String(row[colFrente] || '') : ''),
           cidade: cidade || selectedCity,
           coord_origem_x: colCoordOrigemX ? parseDecimal(row[colCoordOrigemX]) || null : null,
           coord_origem_y: colCoordOrigemY ? parseDecimal(row[colCoordOrigemY]) || null : null,
@@ -178,7 +156,7 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
 
       const seen = new Set<string>();
       const uniqueRows = rows.filter((row) => {
-        const key = rowKey(row);
+        const key = kmRouteKey(row);
         if (seen.has(key)) {
           skipped++;
           return false;
@@ -187,25 +165,20 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
         return true;
       });
 
-      const datas = [...new Set(uniqueRows.map((row) => row.data))];
+      const datas = [...new Set(uniqueRows.map((row) => row.data))].sort();
       let rowsToInsert = uniqueRows;
       if (datas.length > 0) {
-        const { data: existingRows, error: existingError } = await supabase
-          .from('km_tecnica')
-          .select('login_tecnico,data,trecho,endereco_destino,distancia_km,frente,cidade')
-          .eq('cidade', selectedCity)
-          .in('data', datas);
-
-        if (existingError) {
-          errors.push(`Erro ao verificar registros existentes: ${existingError.message}`);
-        } else {
-          const existingKeys = new Set(((existingRows as KmImportRow[] | null) ?? []).map(rowKey));
-          rowsToInsert = uniqueRows.filter((row) => {
-            const alreadyExists = existingKeys.has(rowKey(row));
-            if (alreadyExists) skipped++;
-            return !alreadyExists;
-          });
-        }
+        const existingRows = await fetchKmSummaryRows({
+          cidade: selectedCity,
+          dataInicial: datas[0],
+          dataFinal: datas[datas.length - 1],
+        });
+        const existingKeys = new Set(existingRows.map(kmRouteKey));
+        rowsToInsert = uniqueRows.filter((row) => {
+          const alreadyExists = existingKeys.has(kmRouteKey(row));
+          if (alreadyExists) skipped++;
+          return !alreadyExists;
+        });
       }
 
       // Insert in batches of 500
@@ -249,7 +222,7 @@ const KmImportDialog: React.FC<KmImportDialogProps> = ({ open, onOpenChange, onI
             Importar KM - Arquivo Excel
           </DialogTitle>
           <DialogDescription>
-            Selecione um arquivo Excel com as colunas: Login, Recurso, Data, Trecho, Endereço Destino, Distância (km), Frente, Cidade.
+            Colunas obrigatórias: Login, Data e Distância (km). Frente (ou Tipo/Serviço) é opcional.
             <br />Cidade selecionada: <strong>{selectedCity}</strong>
           </DialogDescription>
         </DialogHeader>

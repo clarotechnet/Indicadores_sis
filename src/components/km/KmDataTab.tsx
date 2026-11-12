@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Database } from 'lucide-react';
 import { isKmServiceOrder } from '@/lib/kmMetrics';
+import { MISSING_KM_FRONT } from '@/lib/kmFronts';
 import type { KmTecnica } from '@/types/database';
 
 interface KmDataTabProps {
@@ -13,6 +14,7 @@ interface KmDataTabProps {
 interface TecnicoResumo {
   login: string;
   nome: string;
+  frentes: string[];
   kmTotal: number;
   osTotal: number;
   kmPorOs: number;
@@ -28,6 +30,7 @@ const KmDataTab: React.FC<KmDataTabProps> = ({ data, transporteMap }) => {
       const existing = map.get(d.login_tecnico) || {
         login: d.login_tecnico,
         nome: d.recurso,
+        frentes: [],
         kmTotal: 0,
         osTotal: 0,
         kmPorOs: 0,
@@ -36,6 +39,8 @@ const KmDataTab: React.FC<KmDataTabProps> = ({ data, transporteMap }) => {
         litros: 0,
       };
       const isServiceOrder = isKmServiceOrder(d);
+      const frente = d.frente || MISSING_KM_FRONT;
+      if (!existing.frentes.includes(frente)) existing.frentes.push(frente);
       existing.kmTotal += d.distancia_km || 0;
       if (isServiceOrder) {
         existing.osTotal += 1;
@@ -71,6 +76,7 @@ const KmDataTab: React.FC<KmDataTabProps> = ({ data, transporteMap }) => {
           <TableHeader>
             <TableRow>
               <TableHead className="text-xs">Técnico</TableHead>
+              <TableHead className="text-xs">Frente</TableHead>
               <TableHead className="text-xs text-center">Transporte</TableHead>
               <TableHead className="text-xs text-right">KM Total</TableHead>
               <TableHead className="text-xs text-right">Litros Est.</TableHead>
@@ -82,7 +88,7 @@ const KmDataTab: React.FC<KmDataTabProps> = ({ data, transporteMap }) => {
           <TableBody>
             {resumo.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground text-sm py-8">
+                <TableCell colSpan={8} className="text-center text-muted-foreground text-sm py-8">
                   Nenhum dado encontrado
                 </TableCell>
               </TableRow>
@@ -90,6 +96,7 @@ const KmDataTab: React.FC<KmDataTabProps> = ({ data, transporteMap }) => {
             {resumo.map((t) => (
               <TableRow key={t.login}>
                 <TableCell className="text-xs sm:text-sm font-medium">{t.nome}</TableCell>
+                <TableCell className="min-w-[160px] text-xs sm:text-sm">{t.frentes.join(', ')}</TableCell>
                 <TableCell className="text-xs sm:text-sm text-center capitalize">{t.transporte === 'moto' ? ' Moto' : ' Carro'}</TableCell>
                 <TableCell className="text-xs sm:text-sm text-right">{t.kmTotal.toFixed(1)}</TableCell>
                 <TableCell className="text-xs sm:text-sm text-right">{t.litros.toFixed(1)} L</TableCell>
